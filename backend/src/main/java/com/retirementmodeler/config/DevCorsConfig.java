@@ -11,16 +11,16 @@ import org.springframework.web.filter.CorsFilter;
 @Profile("dev")
 public class DevCorsConfig {
 
-    @Bean
-    CorsFilter corsFilter() {
-        var config = new CorsConfiguration();
-        config.addAllowedOrigin("http://localhost:5173");
-        config.addAllowedHeader("*");
-        config.addAllowedMethod("*");
-        config.setAllowCredentials(true);
+  @Bean
+  CorsFilter corsFilter() {
+    var config = new CorsConfiguration();
+    config.addAllowedOrigin("http://localhost:5173");
+    config.addAllowedHeader("*");
+    config.addAllowedMethod("*");
+    config.setAllowCredentials(true);
 
-        var source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", config);
-        return new CorsFilter(source);
-    }
+    var source = new UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/api/**", config);
+    return new CorsFilter(source);
+  }
 }

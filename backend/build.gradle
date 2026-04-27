@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.spring.boot)
     alias(libs.plugins.spring.dependency.management)
+    alias(libs.plugins.spotless)
     id 'java'
 }
 
@@ -23,4 +24,10 @@ java {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+spotless {
+    java {
+        googleJavaFormat()
+    }
 }
