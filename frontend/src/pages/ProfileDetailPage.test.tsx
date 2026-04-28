@@ -20,6 +20,9 @@ vi.mock("../api", () => ({
   createScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
+  runSimulation: vi.fn(),
+  getSimulation: vi.fn(),
+  listSimulations: vi.fn(),
 }));
 
 import { getUserProfile, updateUserProfile } from "../api";

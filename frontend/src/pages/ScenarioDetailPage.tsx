@@ -15,8 +15,10 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import SaveIcon from "@mui/icons-material/Save";
-import { getScenario, createScenario, updateScenario, listAccounts } from "../api";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import { getScenario, createScenario, updateScenario, listAccounts, runSimulation } from "../api";
 import type { Account, SimulationAssumptions, WithdrawalStrategy } from "../types";
+import CircularProgress from "@mui/material/CircularProgress";
 
 const WITHDRAWAL_STRATEGIES: { value: WithdrawalStrategy; label: string }[] = [
   { value: "FIXED_PERCENTAGE", label: "Fixed Percentage (e.g. 4% rule)" },
@@ -43,6 +45,7 @@ export default function ScenarioDetailPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [error, setError] = useState("");
+  const [runningSim, setRunningSim] = useState(false);
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -111,6 +114,19 @@ export default function ScenarioDetailPage() {
     setForm((prev) => ({ ...prev, assumptions: { ...prev.assumptions, ...patch } }));
   };
 
+  const handleRunSimulation = async () => {
+    if (!scenarioId || scenarioId === "new") return;
+    setRunningSim(true);
+    try {
+      const res = await runSimulation(scenarioId);
+      navigate(`/simulations/${res.data.id}`);
+    } catch {
+      setError("Failed to run simulation");
+    } finally {
+      setRunningSim(false);
+    }
+  };
+
   return (
     <Box>
       {error && (
@@ -134,9 +150,20 @@ export default function ScenarioDetailPage() {
           variant="contained"
           onClick={handleSave}
           disabled={!form.name}
+          sx={{ mr: 1 }}
         >
           Save
         </Button>
+        {!isNew && (
+          <Button
+            startIcon={runningSim ? <CircularProgress size={20} /> : <PlayArrowIcon />}
+            variant="outlined"
+            onClick={handleRunSimulation}
+            disabled={runningSim || form.accountIds.length === 0}
+          >
+            {runningSim ? "Running..." : "Run Simulation"}
+          </Button>
+        )}
       </Box>
 
       <Paper sx={{ p: 3, mb: 3 }}>

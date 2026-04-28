@@ -1,0 +1,130 @@
+package com.retirementmodeler.simulation;
+
+import com.retirementmodeler.model.Account;
+import com.retirementmodeler.model.IncomeSource;
+import com.retirementmodeler.model.MonteCarloSummary;
+import com.retirementmodeler.model.PercentilePoint;
+import com.retirementmodeler.model.SimulationAssumptions;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import org.springframework.stereotype.Component;
+
+@Component
+public class MonteCarloEngine {
+
+  private final SimulationEngine simulationEngine;
+
+  public MonteCarloEngine(SimulationEngine simulationEngine) {
+    this.simulationEngine = simulationEngine;
+  }
+
+  public MonteCarloSummary run(
+      List<Account> accounts,
+      List<IncomeSource> incomeSources,
+      SimulationAssumptions assumptions,
+      LocalDate dateOfBirth,
+      int retirementAge,
+      int lifeExpectancy,
+      int numTrials) {
+
+    double mean = assumptions.expectedRateOfReturn().doubleValue();
+    double stdDev = assumptions.standardDeviation().doubleValue();
+
+    List<List<BigDecimal>> allTrials = new ArrayList<>();
+    int successes = 0;
+
+    for (int t = 0; t < numTrials; t++) {
+      List<BigDecimal> trialBalances =
+          simulationEngine.projectSingleTrial(
+              accounts,
+              incomeSources,
+              assumptions,
+              dateOfBirth,
+              retirementAge,
+              lifeExpectancy,
+              () -> sampleNormal(mean, stdDev));
+
+      allTrials.add(trialBalances);
+
+      if (!trialBalances.isEmpty()) {
+        BigDecimal finalBalance = trialBalances.get(trialBalances.size() - 1);
+        if (finalBalance.compareTo(BigDecimal.ZERO) > 0) {
+          successes++;
+        }
+      }
+    }
+
+    BigDecimal successRate =
+        BigDecimal.valueOf(successes)
+            .divide(BigDecimal.valueOf(numTrials), 4, RoundingMode.HALF_UP)
+            .multiply(BigDecimal.valueOf(100));
+
+    int projectionLength = allTrials.isEmpty() ? 0 : allTrials.get(0).size();
+    List<PercentilePoint> percentileBalances = new ArrayList<>();
+
+    int currentAge = java.time.Period.between(dateOfBirth, LocalDate.now()).getYears();
+
+    for (int yearIdx = 0; yearIdx < projectionLength; yearIdx++) {
+      List<BigDecimal> yearValues = new ArrayList<>();
+      for (List<BigDecimal> trial : allTrials) {
+        if (yearIdx < trial.size()) {
+          yearValues.add(trial.get(yearIdx));
+        }
+      }
+
+      if (yearValues.isEmpty()) break;
+
+      Collections.sort(yearValues);
+
+      percentileBalances.add(
+          new PercentilePoint(
+              currentAge + yearIdx,
+              percentile(yearValues, 10),
+              percentile(yearValues, 25),
+              percentile(yearValues, 50),
+              percentile(yearValues, 75),
+              percentile(yearValues, 90)));
+    }
+
+    BigDecimal medianYears = BigDecimal.valueOf(computeMedianYearsOfSurvival(allTrials));
+
+    return new MonteCarloSummary(numTrials, successRate, medianYears, percentileBalances);
+  }
+
+  private BigDecimal percentile(List<BigDecimal> sorted, int pct) {
+    int index = (int) Math.ceil(pct / 100.0 * sorted.size()) - 1;
+    index = Math.max(0, Math.min(index, sorted.size() - 1));
+    return sorted.get(index);
+  }
+
+  private double sampleNormal(double mean, double stdDev) {
+    ThreadLocalRandom rng = ThreadLocalRandom.current();
+    return mean + stdDev * rng.nextGaussian();
+  }
+
+  private double computeMedianYearsOfSurvival(List<List<BigDecimal>> allTrials) {
+    List<Double> survivalYears = new ArrayList<>();
+    for (List<BigDecimal> trial : allTrials) {
+      double years = 0;
+      for (int i = 0; i < trial.size(); i++) {
+        if (trial.get(i).compareTo(BigDecimal.ZERO) <= 0) {
+          years = i;
+          break;
+        }
+        years = i;
+      }
+      survivalYears.add(years);
+    }
+    Collections.sort(survivalYears);
+    int mid = survivalYears.size() / 2;
+    if (survivalYears.size() % 2 == 0 && mid > 0) {
+      return (survivalYears.get(mid - 1) + survivalYears.get(mid)) / 2.0;
+    }
+    return survivalYears.get(mid);
+  }
+}

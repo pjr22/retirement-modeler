@@ -64,3 +64,39 @@ export interface Scenario {
   accountIds: string[];
   assumptions: SimulationAssumptions;
 }
+
+export interface YearlyProjection {
+  age: number;
+  year: number;
+  totalBalance: number;
+  totalContributions: number;
+  totalWithdrawals: number;
+  totalIncome: number;
+  totalTax: number;
+  inflationFactor: number;
+}
+
+export interface PercentilePoint {
+  age: number;
+  p10: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p90: number;
+}
+
+export interface MonteCarloSummary {
+  trials: number;
+  successRate: number;
+  medianYearsOfSurvival: number;
+  percentileBalances: PercentilePoint[];
+}
+
+export interface SimulationResult {
+  id: string;
+  scenarioId: string;
+  userId: string;
+  createdAt: string;
+  deterministicProjection: YearlyProjection[];
+  monteCarloSummary: MonteCarloSummary;
+}

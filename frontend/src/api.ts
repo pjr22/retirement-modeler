@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { UserProfile, Account, Scenario } from "./types";
+import type { UserProfile, Account, Scenario, SimulationResult } from "./types";
 
 const api = axios.create({
   baseURL: "http://localhost:8080",
@@ -29,5 +29,11 @@ export const createScenario = (userId: string, scenario: Omit<Scenario, "id" | "
 export const updateScenario = (id: string, scenario: Omit<Scenario, "id" | "userId">) =>
   api.put<Scenario>(`/api/scenarios/${id}`, scenario);
 export const deleteScenario = (id: string) => api.delete(`/api/scenarios/${id}`);
+
+export const runSimulation = (scenarioId: string) =>
+  api.post<SimulationResult>(`/api/scenarios/${scenarioId}/simulate`);
+export const getSimulation = (id: string) => api.get<SimulationResult>(`/api/simulations/${id}`);
+export const listSimulations = (userId: string) =>
+  api.get<SimulationResult[]>(`/api/users/${userId}/simulations`);
 
 export default api;

@@ -20,9 +20,12 @@ vi.mock("../api", () => ({
   createScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
+  runSimulation: vi.fn(),
+  getSimulation: vi.fn(),
+  listSimulations: vi.fn(),
 }));
 
-import { getScenario, listAccounts, createScenario, updateScenario } from "../api";
+import { getScenario, listAccounts, createScenario, updateScenario, runSimulation } from "../api";
 
 const sampleScenario = {
   id: "scen-1",
@@ -153,6 +156,42 @@ describe("ScenarioDetailPage", () => {
         "prof-1",
         expect.objectContaining({ name: "Test Scenario" }),
       );
+    });
+  });
+
+  it("shows Run Simulation button for existing scenarios and triggers simulation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getScenario).mockResolvedValue({ data: sampleScenario });
+    vi.mocked(listAccounts).mockResolvedValue({ data: sampleAccounts });
+    vi.mocked(runSimulation).mockResolvedValue({
+      data: {
+        id: "sim-1",
+        scenarioId: "scen-1",
+        userId: "prof-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        deterministicProjection: [],
+        monteCarloSummary: {
+          trials: 0,
+          successRate: 0,
+          medianYearsOfSurvival: 0,
+          percentileBalances: [],
+        },
+      },
+    });
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Run Simulation")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Run Simulation"));
+
+    await waitFor(() => {
+      expect(runSimulation).toHaveBeenCalledWith("scen-1");
     });
   });
 });

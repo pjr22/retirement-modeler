@@ -211,7 +211,19 @@ export default function AccountsPage() {
             label="Account Type"
             select
             value={form.accountType}
-            onChange={(e) => setForm({ ...form, accountType: e.target.value as AccountType })}
+            onChange={(e) => {
+              const newType = e.target.value as AccountType;
+              setForm({
+                ...form,
+                accountType: newType,
+                balance: BENEFIT_TYPES.includes(newType) ? 0 : form.balance,
+                annualContribution: CONTRIBUTION_TYPES.includes(newType)
+                  ? form.annualContribution
+                  : null,
+                monthlyBenefit: BENEFIT_TYPES.includes(newType) ? form.monthlyBenefit : null,
+                benefitStartAge: BENEFIT_TYPES.includes(newType) ? form.benefitStartAge : null,
+              });
+            }}
             fullWidth
           >
             {ACCOUNT_TYPES.map((t) => (
@@ -220,13 +232,15 @@ export default function AccountsPage() {
               </MenuItem>
             ))}
           </TextField>
-          <TextField
-            label="Current Balance"
-            type="number"
-            value={form.balance || ""}
-            onChange={(e) => setForm({ ...form, balance: Number(e.target.value) })}
-            fullWidth
-          />
+          {!BENEFIT_TYPES.includes(form.accountType) && (
+            <TextField
+              label="Current Balance"
+              type="number"
+              value={form.balance || ""}
+              onChange={(e) => setForm({ ...form, balance: Number(e.target.value) })}
+              fullWidth
+            />
+          )}
           {CONTRIBUTION_TYPES.includes(form.accountType) && (
             <TextField
               label="Annual Contribution"
