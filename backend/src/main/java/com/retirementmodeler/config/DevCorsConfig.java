@@ -4,15 +4,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.web.filter.CorsFilter;
 
 @Configuration
 @Profile("dev")
 public class DevCorsConfig {
 
   @Bean
-  CorsFilter corsFilter() {
+  public CorsConfigurationSource corsConfigurationSource() {
     var config = new CorsConfiguration();
     config.addAllowedOrigin("http://localhost:5173");
     config.addAllowedHeader("*");
@@ -21,6 +21,6 @@ public class DevCorsConfig {
 
     var source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration("/api/**", config);
-    return new CorsFilter(source);
+    return source;
   }
 }

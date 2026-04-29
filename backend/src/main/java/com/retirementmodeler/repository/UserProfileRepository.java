@@ -4,13 +4,10 @@ import com.retirementmodeler.model.UserProfile;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface UserProfileRepository {
-  UserProfile save(UserProfile userProfile);
+public interface UserProfileRepository extends JpaRepository<UserProfile, UUID> {
+  List<UserProfile> findByOwnerId(UUID ownerId);
 
-  Optional<UserProfile> findById(UUID id);
-
-  List<UserProfile> findAll();
-
-  void deleteById(UUID id);
+  Optional<UserProfile> findByIdAndOwnerId(UUID id, UUID ownerId);
 }

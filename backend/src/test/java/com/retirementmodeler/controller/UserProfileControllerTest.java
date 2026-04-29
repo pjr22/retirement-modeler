@@ -8,43 +8,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.retirementmodeler.repository.UserProfileRepository;
-import java.time.LocalDate;
-import java.util.List;
-import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
+import com.retirementmodeler.BaseIntegrationTest;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-class UserProfileControllerTest {
-
-  @Autowired private MockMvc mockMvc;
-
-  @Autowired private ObjectMapper objectMapper;
-
-  @Autowired private UserProfileRepository userProfileRepository;
-
-  @BeforeEach
-  void cleanup() {
-    userProfileRepository.findAll().forEach(u -> userProfileRepository.deleteById(u.id()));
-  }
-
-  private record CreateProfileRequest(
-      String name,
-      LocalDate dateOfBirth,
-      int plannedRetirementAge,
-      int lifeExpectancy,
-      String filingStatus,
-      List<Object> incomeSources) {}
+class UserProfileControllerTest extends BaseIntegrationTest {
 
   @Nested
   class Create {
@@ -122,7 +92,9 @@ class UserProfileControllerTest {
 
     @Test
     void returns404ForUnknownId() throws Exception {
-      mockMvc.perform(get("/api/users/{id}", UUID.randomUUID())).andExpect(status().isNotFound());
+      mockMvc
+          .perform(get("/api/users/{id}", java.util.UUID.randomUUID()))
+          .andExpect(status().isNotFound());
     }
   }
 
@@ -175,7 +147,7 @@ class UserProfileControllerTest {
     void returns404ForUnknownId() throws Exception {
       mockMvc
           .perform(
-              put("/api/users/{id}", UUID.randomUUID())
+              put("/api/users/{id}", java.util.UUID.randomUUID())
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(
                       """

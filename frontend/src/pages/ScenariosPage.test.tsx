@@ -22,6 +22,16 @@ vi.mock("../api", () => ({
   runSimulation: vi.fn(),
   getSimulation: vi.fn(),
   listSimulations: vi.fn(),
+  getStoredAuth: vi.fn(() => ({
+    token: "test-token",
+    userId: "test-user-id",
+    email: "test@test.com",
+    isAuthenticated: true,
+  })),
+  storeAuth: vi.fn(),
+  clearAuth: vi.fn(),
+  register: vi.fn(),
+  login: vi.fn(),
 }));
 
 import { listScenarios } from "../api";

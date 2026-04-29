@@ -20,6 +20,19 @@ vi.mock("../api", () => ({
   createScenario: vi.fn(),
   updateScenario: vi.fn(),
   deleteScenario: vi.fn(),
+  runSimulation: vi.fn(),
+  getSimulation: vi.fn(),
+  listSimulations: vi.fn(),
+  getStoredAuth: vi.fn(() => ({
+    token: "test-token",
+    userId: "test-user-id",
+    email: "test@test.com",
+    isAuthenticated: true,
+  })),
+  storeAuth: vi.fn(),
+  clearAuth: vi.fn(),
+  register: vi.fn(),
+  login: vi.fn(),
 }));
 
 describe("HealthStatus", () => {

@@ -29,3 +29,7 @@ frontend/.vite/
 # Environment
 *.env
 *.env.local
+
+continue.sh
+HANDOFF.md
+

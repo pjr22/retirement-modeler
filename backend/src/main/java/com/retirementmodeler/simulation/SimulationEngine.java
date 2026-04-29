@@ -66,7 +66,7 @@ public class SimulationEngine {
 
     List<BigDecimal> balances =
         accounts.stream()
-            .map(a -> a.balance() != null ? a.balance() : BigDecimal.ZERO)
+            .map(a -> a.getBalance() != null ? a.getBalance() : BigDecimal.ZERO)
             .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
 
     BigDecimal inflationFactor = BigDecimal.ONE;
@@ -93,24 +93,24 @@ public class SimulationEngine {
         BigDecimal rate =
             returnSampler != null
                 ? BigDecimal.valueOf(returnSampler.getAsDouble())
-                : assumptions.expectedRateOfReturn();
+                : assumptions.getExpectedRateOfReturn();
         balance = balance.multiply(BigDecimal.ONE.add(rate), MC);
 
         if (!isRetired
-            && account.annualContribution() != null
-            && isContributionType(account.accountType())) {
-          BigDecimal contrib = account.annualContribution().multiply(inflationFactor, MC);
+            && account.getAnnualContribution() != null
+            && isContributionType(account.getAccountType())) {
+          BigDecimal contrib = account.getAnnualContribution().multiply(inflationFactor, MC);
           balance = balance.add(contrib, MC);
           yearContributions = yearContributions.add(contrib, MC);
         }
 
         if (isRetired
-            && account.monthlyBenefit() != null
-            && account.benefitStartAge() != null
-            && age >= account.benefitStartAge()) {
+            && account.getMonthlyBenefit() != null
+            && account.getBenefitStartAge() != null
+            && age >= account.getBenefitStartAge()) {
           BigDecimal annualBenefit =
               account
-                  .monthlyBenefit()
+                  .getMonthlyBenefit()
                   .multiply(BigDecimal.valueOf(12), MC)
                   .multiply(inflationFactor, MC);
           balance = balance.add(annualBenefit, MC);
@@ -122,8 +122,8 @@ public class SimulationEngine {
 
       if (!isRetired && incomeSources != null) {
         for (IncomeSource src : incomeSources) {
-          if (src.endAge() == null || age < src.endAge()) {
-            BigDecimal annualIncome = src.annualAmount().multiply(inflationFactor, MC);
+          if (src.getEndAge() == null || age < src.getEndAge()) {
+            BigDecimal annualIncome = src.getAnnualAmount().multiply(inflationFactor, MC);
             yearIncome = yearIncome.add(annualIncome, MC);
           }
         }
@@ -137,7 +137,7 @@ public class SimulationEngine {
       }
 
       BigDecimal taxableIncome = yearIncome.add(yearWithdrawals);
-      BigDecimal yearTax = taxableIncome.multiply(assumptions.flatTaxRate(), MC);
+      BigDecimal yearTax = taxableIncome.multiply(assumptions.getFlatTaxRate(), MC);
 
       cumulativeContributions = cumulativeContributions.add(yearContributions, MC);
       cumulativeWithdrawals = cumulativeWithdrawals.add(yearWithdrawals, MC);
@@ -147,7 +147,7 @@ public class SimulationEngine {
       BigDecimal totalBalance = balances.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
       inflationFactor =
-          inflationFactor.multiply(BigDecimal.ONE.add(assumptions.inflationRate()), MC);
+          inflationFactor.multiply(BigDecimal.ONE.add(assumptions.getInflationRate()), MC);
 
       projections.add(
           new YearlyProjection(
@@ -169,13 +169,13 @@ public class SimulationEngine {
     if (totalBalance.compareTo(BigDecimal.ZERO) <= 0) {
       return BigDecimal.ZERO;
     }
-    return switch (assumptions.withdrawalStrategy()) {
+    return switch (assumptions.getWithdrawalStrategy()) {
       case FIXED_PERCENTAGE -> {
-        BigDecimal pct = assumptions.withdrawalPercentage();
+        BigDecimal pct = assumptions.getWithdrawalPercentage();
         yield totalBalance.multiply(pct != null ? pct : BigDecimal.valueOf(0.04), MC);
       }
       case FIXED_DOLLAR -> {
-        BigDecimal amount = assumptions.withdrawalFixedAmount();
+        BigDecimal amount = assumptions.getWithdrawalFixedAmount();
         yield (amount != null ? amount : BigDecimal.ZERO).multiply(inflationFactor, MC);
       }
     };

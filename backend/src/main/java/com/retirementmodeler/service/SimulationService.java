@@ -42,58 +42,57 @@ public class SimulationService {
     this.repository = repository;
   }
 
-  public SimulationResult runSimulation(UUID scenarioId) {
+  public SimulationResult runSimulation(UUID scenarioId, UUID ownerId) {
     Scenario scenario = scenarioService.getById(scenarioId);
-    UserProfile profile = userProfileService.getById(scenario.userId());
+    UserProfile profile = userProfileService.getByIdAndOwnerId(scenario.getUserId(), ownerId);
 
-    List<Account> allAccounts = accountService.getByUserId(scenario.userId());
+    List<Account> allAccounts = accountService.getByUserId(scenario.getUserId());
     List<Account> selectedAccounts =
         allAccounts.stream()
-            .filter(a -> scenario.accountIds().contains(a.id()))
+            .filter(a -> scenario.getAccountIds().contains(a.getId()))
             .collect(Collectors.toList());
 
-    SimulationAssumptions assumptions = scenario.assumptions();
+    SimulationAssumptions assumptions = scenario.getAssumptions();
 
     List<YearlyProjection> deterministic =
         simulationEngine.projectDeterministic(
             selectedAccounts,
-            profile.incomeSources(),
+            profile.getIncomeSources(),
             assumptions,
-            profile.dateOfBirth(),
-            profile.plannedRetirementAge(),
-            profile.lifeExpectancy());
+            profile.getDateOfBirth(),
+            profile.getPlannedRetirementAge(),
+            profile.getLifeExpectancy());
 
-    int trials = assumptions.monteCarloTrials() != null ? assumptions.monteCarloTrials() : 1000;
+    int trials =
+        assumptions.getMonteCarloTrials() != null ? assumptions.getMonteCarloTrials() : 1000;
     trials = Math.min(trials, 10000);
 
     MonteCarloSummary monteCarlo =
         monteCarloEngine.run(
             selectedAccounts,
-            profile.incomeSources(),
+            profile.getIncomeSources(),
             assumptions,
-            profile.dateOfBirth(),
-            profile.plannedRetirementAge(),
-            profile.lifeExpectancy(),
+            profile.getDateOfBirth(),
+            profile.getPlannedRetirementAge(),
+            profile.getLifeExpectancy(),
             trials);
 
     SimulationResult result =
         new SimulationResult(
-            UUID.randomUUID(),
-            scenarioId,
-            scenario.userId(),
-            Instant.now(),
-            deterministic,
-            monteCarlo);
+            null, scenarioId, scenario.getUserId(), Instant.now(), deterministic, monteCarlo);
 
     return repository.save(result);
   }
 
-  public SimulationResult getById(UUID id) {
-    return repository.findById(id).orElseThrow(() -> notFound(id));
+  public SimulationResult getById(UUID id, UUID ownerId) {
+    SimulationResult result = repository.findById(id).orElseThrow(() -> notFound(id));
+    userProfileService.getByIdAndOwnerId(result.getUserId(), ownerId);
+    return result;
   }
 
-  public List<SimulationResult> getByUserId(UUID userId) {
-    return repository.findByUserId(userId);
+  public List<SimulationResult> getByUserId(UUID profileId, UUID ownerId) {
+    userProfileService.getByIdAndOwnerId(profileId, ownerId);
+    return repository.findByUserIdOrderByCreatedAtDesc(profileId);
   }
 
   private ResourceNotFoundException notFound(UUID id) {

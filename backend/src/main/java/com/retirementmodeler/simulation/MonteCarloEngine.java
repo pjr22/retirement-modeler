@@ -32,8 +32,8 @@ public class MonteCarloEngine {
       int lifeExpectancy,
       int numTrials) {
 
-    double mean = assumptions.expectedRateOfReturn().doubleValue();
-    double stdDev = assumptions.standardDeviation().doubleValue();
+    double mean = assumptions.getExpectedRateOfReturn().doubleValue();
+    double stdDev = assumptions.getStandardDeviation().doubleValue();
 
     List<List<BigDecimal>> allTrials = new ArrayList<>();
     int successes = 0;

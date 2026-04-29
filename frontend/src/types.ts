@@ -100,3 +100,16 @@ export interface SimulationResult {
   deterministicProjection: YearlyProjection[];
   monteCarloSummary: MonteCarloSummary;
 }
+
+export interface AuthResponse {
+  token: string;
+  userId: string;
+  email: string;
+}
+
+export interface AuthState {
+  token: string | null;
+  userId: string | null;
+  email: string | null;
+  isAuthenticated: boolean;
+}

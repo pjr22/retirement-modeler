@@ -1,10 +1,12 @@
 package com.retirementmodeler.controller;
 
 import com.retirementmodeler.model.SimulationResult;
+import com.retirementmodeler.security.CustomUserDetails;
 import com.retirementmodeler.service.SimulationService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,17 +26,20 @@ public class SimulationController {
 
   @PostMapping("/scenarios/{scenarioId}/simulate")
   @ResponseStatus(HttpStatus.CREATED)
-  public SimulationResult simulate(@PathVariable UUID scenarioId) {
-    return service.runSimulation(scenarioId);
+  public SimulationResult simulate(
+      @PathVariable UUID scenarioId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.runSimulation(scenarioId, userDetails.getId());
   }
 
   @GetMapping("/simulations/{id}")
-  public SimulationResult getById(@PathVariable UUID id) {
-    return service.getById(id);
+  public SimulationResult getById(
+      @PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getById(id, userDetails.getId());
   }
 
   @GetMapping("/users/{userId}/simulations")
-  public List<SimulationResult> getByUserId(@PathVariable UUID userId) {
-    return service.getByUserId(userId);
+  public List<SimulationResult> getByUserId(
+      @PathVariable UUID userId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getByUserId(userId, userDetails.getId());
   }
 }

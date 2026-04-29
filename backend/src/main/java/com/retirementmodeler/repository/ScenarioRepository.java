@@ -4,13 +4,10 @@ import com.retirementmodeler.model.Scenario;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface ScenarioRepository {
-  Scenario save(Scenario scenario);
-
-  Optional<Scenario> findById(UUID id);
-
+public interface ScenarioRepository extends JpaRepository<Scenario, UUID> {
   List<Scenario> findByUserId(UUID userId);
 
-  void deleteById(UUID id);
+  Optional<Scenario> findByIdAndUserId(UUID id, UUID userId);
 }

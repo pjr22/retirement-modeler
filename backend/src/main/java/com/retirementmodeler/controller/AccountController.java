@@ -1,10 +1,12 @@
 package com.retirementmodeler.controller;
 
 import com.retirementmodeler.model.Account;
+import com.retirementmodeler.security.CustomUserDetails;
 import com.retirementmodeler.service.AccountService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +29,11 @@ public class AccountController {
 
   @PostMapping("/users/{userId}/accounts")
   @ResponseStatus(HttpStatus.CREATED)
-  public Account create(@PathVariable UUID userId, @RequestBody Account account) {
-    return service.create(userId, account);
+  public Account create(
+      @PathVariable UUID userId,
+      @RequestBody Account account,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.create(userId, userDetails.getId(), account);
   }
 
   @GetMapping("/users/{userId}/accounts")
@@ -37,13 +42,17 @@ public class AccountController {
   }
 
   @PutMapping("/accounts/{id}")
-  public Account update(@PathVariable UUID id, @RequestBody Account account) {
-    return service.update(id, account);
+  public Account update(
+      @PathVariable UUID id,
+      @RequestBody Account account,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.update(id, userDetails.getId(), account);
   }
 
   @DeleteMapping("/accounts/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void delete(@PathVariable UUID id) {
-    service.delete(id);
+  public void delete(
+      @PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    service.delete(id, userDetails.getId());
   }
 }

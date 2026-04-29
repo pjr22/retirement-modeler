@@ -4,13 +4,10 @@ import com.retirementmodeler.model.SimulationResult;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface SimulationRepository {
-  SimulationResult save(SimulationResult result);
+public interface SimulationRepository extends JpaRepository<SimulationResult, UUID> {
+  Optional<SimulationResult> findByIdAndUserId(UUID id, UUID userId);
 
-  Optional<SimulationResult> findById(UUID id);
-
-  List<SimulationResult> findByUserId(UUID userId);
-
-  void deleteById(UUID id);
+  List<SimulationResult> findByUserIdOrderByCreatedAtDesc(UUID userId);
 }

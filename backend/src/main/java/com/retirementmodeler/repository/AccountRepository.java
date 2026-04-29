@@ -4,13 +4,10 @@ import com.retirementmodeler.model.Account;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface AccountRepository {
-  Account save(Account account);
-
-  Optional<Account> findById(UUID id);
-
+public interface AccountRepository extends JpaRepository<Account, UUID> {
   List<Account> findByUserId(UUID userId);
 
-  void deleteById(UUID id);
+  Optional<Account> findByIdAndUserId(UUID id, UUID userId);
 }

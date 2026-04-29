@@ -2,8 +2,10 @@ package com.retirementmodeler.service;
 
 import com.retirementmodeler.exceptions.ResourceNotFoundException;
 import com.retirementmodeler.model.IncomeSource;
+import com.retirementmodeler.model.User;
 import com.retirementmodeler.model.UserProfile;
 import com.retirementmodeler.repository.UserProfileRepository;
+import com.retirementmodeler.repository.UserRepository;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -12,50 +14,54 @@ import org.springframework.stereotype.Service;
 public class UserProfileService {
 
   private final UserProfileRepository repository;
+  private final UserRepository userRepository;
 
-  public UserProfileService(UserProfileRepository repository) {
+  public UserProfileService(UserProfileRepository repository, UserRepository userRepository) {
     this.repository = repository;
+    this.userRepository = userRepository;
   }
 
-  public UserProfile create(UserProfile userProfile) {
-    UUID id = UUID.randomUUID();
-    List<IncomeSource> incomeSources = ensureIncomeSourceIds(userProfile.incomeSources());
-    UserProfile saved =
-        new UserProfile(
-            id,
-            userProfile.name(),
-            userProfile.dateOfBirth(),
-            userProfile.plannedRetirementAge(),
-            userProfile.lifeExpectancy(),
-            userProfile.filingStatus(),
-            incomeSources);
-    return repository.save(saved);
+  public UserProfile create(UUID ownerId, UserProfile profile) {
+    User owner =
+        userRepository
+            .findById(ownerId)
+            .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
+    profile.setOwner(owner);
+    List<IncomeSource> incomeSources = ensureIncomeSourceIds(profile.getIncomeSources());
+    profile.setIncomeSources(incomeSources);
+    return repository.save(profile);
   }
 
   public UserProfile getById(UUID id) {
     return repository.findById(id).orElseThrow(() -> notFound(id));
   }
 
+  public UserProfile getByIdAndOwnerId(UUID id, UUID ownerId) {
+    return repository.findByIdAndOwnerId(id, ownerId).orElseThrow(() -> notFound(id));
+  }
+
+  public List<UserProfile> getAllByOwnerId(UUID ownerId) {
+    return repository.findByOwnerId(ownerId);
+  }
+
   public List<UserProfile> getAll() {
     return repository.findAll();
   }
 
-  public UserProfile update(UUID id, UserProfile userProfile) {
-    repository.findById(id).orElseThrow(() -> notFound(id));
-    List<IncomeSource> incomeSources = ensureIncomeSourceIds(userProfile.incomeSources());
-    UserProfile updated =
-        new UserProfile(
-            id,
-            userProfile.name(),
-            userProfile.dateOfBirth(),
-            userProfile.plannedRetirementAge(),
-            userProfile.lifeExpectancy(),
-            userProfile.filingStatus(),
-            incomeSources);
-    return repository.save(updated);
+  public UserProfile update(UUID id, UUID ownerId, UserProfile profile) {
+    UserProfile existing = getByIdAndOwnerId(id, ownerId);
+    existing.setName(profile.getName());
+    existing.setDateOfBirth(profile.getDateOfBirth());
+    existing.setPlannedRetirementAge(profile.getPlannedRetirementAge());
+    existing.setLifeExpectancy(profile.getLifeExpectancy());
+    existing.setFilingStatus(profile.getFilingStatus());
+    List<IncomeSource> incomeSources = ensureIncomeSourceIds(profile.getIncomeSources());
+    existing.setIncomeSources(incomeSources);
+    return repository.save(existing);
   }
 
-  public void delete(UUID id) {
+  public void delete(UUID id, UUID ownerId) {
+    getByIdAndOwnerId(id, ownerId);
     repository.deleteById(id);
   }
 
@@ -67,10 +73,10 @@ public class UserProfileService {
         .map(
             is ->
                 new IncomeSource(
-                    is.id() != null ? is.id() : UUID.randomUUID(),
-                    is.name(),
-                    is.annualAmount(),
-                    is.endAge()))
+                    is.getId() != null ? is.getId() : UUID.randomUUID(),
+                    is.getName(),
+                    is.getAnnualAmount(),
+                    is.getEndAge()))
         .toList();
   }
 

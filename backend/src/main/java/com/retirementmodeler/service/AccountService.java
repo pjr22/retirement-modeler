@@ -3,6 +3,7 @@ package com.retirementmodeler.service;
 import com.retirementmodeler.exceptions.ResourceNotFoundException;
 import com.retirementmodeler.model.Account;
 import com.retirementmodeler.repository.AccountRepository;
+import com.retirementmodeler.repository.UserProfileRepository;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -11,50 +12,49 @@ import org.springframework.stereotype.Service;
 public class AccountService {
 
   private final AccountRepository repository;
+  private final UserProfileRepository userProfileRepository;
 
-  public AccountService(AccountRepository repository) {
+  public AccountService(AccountRepository repository, UserProfileRepository userProfileRepository) {
     this.repository = repository;
+    this.userProfileRepository = userProfileRepository;
   }
 
-  public Account create(UUID userId, Account account) {
-    Account saved =
-        new Account(
-            UUID.randomUUID(),
-            userId,
-            account.name(),
-            account.accountType(),
-            account.balance(),
-            account.annualContribution(),
-            account.monthlyBenefit(),
-            account.benefitStartAge());
-    return repository.save(saved);
+  public Account create(UUID profileId, UUID ownerId, Account account) {
+    validateProfileOwnership(profileId, ownerId);
+    account.setUserId(profileId);
+    return repository.save(account);
   }
 
   public Account getById(UUID id) {
     return repository.findById(id).orElseThrow(() -> notFound(id));
   }
 
-  public List<Account> getByUserId(UUID userId) {
-    return repository.findByUserId(userId);
+  public List<Account> getByUserId(UUID profileId) {
+    return repository.findByUserId(profileId);
   }
 
-  public Account update(UUID id, Account account) {
+  public Account update(UUID id, UUID ownerId, Account account) {
     Account existing = repository.findById(id).orElseThrow(() -> notFound(id));
-    Account updated =
-        new Account(
-            id,
-            existing.userId(),
-            account.name(),
-            account.accountType(),
-            account.balance(),
-            account.annualContribution(),
-            account.monthlyBenefit(),
-            account.benefitStartAge());
-    return repository.save(updated);
+    validateProfileOwnership(existing.getUserId(), ownerId);
+    existing.setName(account.getName());
+    existing.setAccountType(account.getAccountType());
+    existing.setBalance(account.getBalance());
+    existing.setAnnualContribution(account.getAnnualContribution());
+    existing.setMonthlyBenefit(account.getMonthlyBenefit());
+    existing.setBenefitStartAge(account.getBenefitStartAge());
+    return repository.save(existing);
   }
 
-  public void delete(UUID id) {
+  public void delete(UUID id, UUID ownerId) {
+    Account existing = repository.findById(id).orElseThrow(() -> notFound(id));
+    validateProfileOwnership(existing.getUserId(), ownerId);
     repository.deleteById(id);
+  }
+
+  private void validateProfileOwnership(UUID profileId, UUID ownerId) {
+    userProfileRepository
+        .findByIdAndOwnerId(profileId, ownerId)
+        .orElseThrow(() -> new ResourceNotFoundException("User profile not found: " + profileId));
   }
 
   private ResourceNotFoundException notFound(UUID id) {

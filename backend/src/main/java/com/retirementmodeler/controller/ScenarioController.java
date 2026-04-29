@@ -1,10 +1,12 @@
 package com.retirementmodeler.controller;
 
 import com.retirementmodeler.model.Scenario;
+import com.retirementmodeler.security.CustomUserDetails;
 import com.retirementmodeler.service.ScenarioService;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,8 +29,11 @@ public class ScenarioController {
 
   @PostMapping("/users/{userId}/scenarios")
   @ResponseStatus(HttpStatus.CREATED)
-  public Scenario create(@PathVariable UUID userId, @RequestBody Scenario scenario) {
-    return service.create(userId, scenario);
+  public Scenario create(
+      @PathVariable UUID userId,
+      @RequestBody Scenario scenario,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.create(userId, userDetails.getId(), scenario);
   }
 
   @GetMapping("/users/{userId}/scenarios")
@@ -42,13 +47,17 @@ public class ScenarioController {
   }
 
   @PutMapping("/scenarios/{id}")
-  public Scenario update(@PathVariable UUID id, @RequestBody Scenario scenario) {
-    return service.update(id, scenario);
+  public Scenario update(
+      @PathVariable UUID id,
+      @RequestBody Scenario scenario,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.update(id, userDetails.getId(), scenario);
   }
 
   @DeleteMapping("/scenarios/{id}")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void delete(@PathVariable UUID id) {
-    service.delete(id);
+  public void delete(
+      @PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    service.delete(id, userDetails.getId());
   }
 }
