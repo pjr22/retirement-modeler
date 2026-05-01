@@ -16,6 +16,8 @@ import {
   MenuItem,
   Grid,
   Alert,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
@@ -53,6 +55,12 @@ interface AccountForm {
   annualContribution: number | null;
   monthlyBenefit: number | null;
   benefitStartAge: number | null;
+  inflationAdjusted: boolean;
+}
+
+// Smart default for the inflation-adjusted flag: SS has a COLA, pensions usually don't.
+function defaultInflationAdjusted(type: AccountType): boolean {
+  return type === "SOCIAL_SECURITY";
 }
 
 const emptyForm: AccountForm = {
@@ -62,6 +70,7 @@ const emptyForm: AccountForm = {
   annualContribution: null,
   monthlyBenefit: null,
   benefitStartAge: null,
+  inflationAdjusted: false,
 };
 
 export default function AccountsPage() {
@@ -102,6 +111,7 @@ export default function AccountsPage() {
       annualContribution: account.annualContribution,
       monthlyBenefit: account.monthlyBenefit,
       benefitStartAge: account.benefitStartAge,
+      inflationAdjusted: account.inflationAdjusted,
     });
     setDialogOpen(true);
   };
@@ -222,6 +232,11 @@ export default function AccountsPage() {
                   : null,
                 monthlyBenefit: BENEFIT_TYPES.includes(newType) ? form.monthlyBenefit : null,
                 benefitStartAge: BENEFIT_TYPES.includes(newType) ? form.benefitStartAge : null,
+                // Smart default for the COLA flag when switching to a benefit type:
+                // SS gets true, pension false. User can still toggle.
+                inflationAdjusted: BENEFIT_TYPES.includes(newType)
+                  ? defaultInflationAdjusted(newType)
+                  : false,
               });
             }}
             fullWidth
@@ -274,6 +289,15 @@ export default function AccountsPage() {
                   })
                 }
                 fullWidth
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.inflationAdjusted}
+                    onChange={(e) => setForm({ ...form, inflationAdjusted: e.target.checked })}
+                  />
+                }
+                label="Adjust monthly benefit for inflation each year (e.g. Social Security COLA)"
               />
             </>
           )}

@@ -69,7 +69,7 @@ describe("ScenariosPage", () => {
             inflationRate: 0.03,
             withdrawalStrategy: "FIXED_PERCENTAGE",
             withdrawalPercentage: 0.04,
-            withdrawalFixedAmount: null,
+            withdrawalMonthlyAmount: null,
             standardDeviation: 0.12,
             monteCarloTrials: 1000,
             flatTaxRate: 0.22,

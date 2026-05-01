@@ -1,13 +1,14 @@
 package com.retirementmodeler.model;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public record YearlyProjection(
     int age,
-    int year,
-    BigDecimal totalBalance,
-    BigDecimal totalContributions,
-    BigDecimal totalWithdrawals,
-    BigDecimal totalIncome,
-    BigDecimal totalTax,
+    LocalDate date,
+    BigDecimal balance,
+    BigDecimal yearContributions,
+    BigDecimal yearWithdrawals,
+    BigDecimal yearIncome,
+    BigDecimal yearTax,
     BigDecimal inflationFactor) {}

@@ -32,7 +32,7 @@ public class UserProfile {
 
   private LocalDate dateOfBirth;
 
-  private int plannedRetirementAge;
+  private LocalDate plannedRetirementDate;
 
   private int lifeExpectancy;
 
@@ -77,12 +77,12 @@ public class UserProfile {
     this.dateOfBirth = dateOfBirth;
   }
 
-  public int getPlannedRetirementAge() {
-    return plannedRetirementAge;
+  public LocalDate getPlannedRetirementDate() {
+    return plannedRetirementDate;
   }
 
-  public void setPlannedRetirementAge(int plannedRetirementAge) {
-    this.plannedRetirementAge = plannedRetirementAge;
+  public void setPlannedRetirementDate(LocalDate plannedRetirementDate) {
+    this.plannedRetirementDate = plannedRetirementDate;
   }
 
   public int getLifeExpectancy() {

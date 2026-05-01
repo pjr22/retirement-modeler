@@ -28,12 +28,15 @@ public class MonteCarloEngine {
       List<IncomeSource> incomeSources,
       SimulationAssumptions assumptions,
       LocalDate dateOfBirth,
-      int retirementAge,
+      LocalDate plannedRetirementDate,
       int lifeExpectancy,
       int numTrials) {
 
-    double mean = assumptions.getExpectedRateOfReturn().doubleValue();
-    double stdDev = assumptions.getStandardDeviation().doubleValue();
+    // Convert annual return params to monthly: mean/12, stddev/sqrt(12).
+    // The variance scales linearly with horizon under the standard random-walk
+    // assumption, so 12 monthly samples sum to the desired annual distribution.
+    double monthlyMean = assumptions.getExpectedRateOfReturn().doubleValue() / 12.0;
+    double monthlyStdDev = assumptions.getStandardDeviation().doubleValue() / Math.sqrt(12.0);
 
     List<List<BigDecimal>> allTrials = new ArrayList<>();
     int successes = 0;
@@ -45,9 +48,9 @@ public class MonteCarloEngine {
               incomeSources,
               assumptions,
               dateOfBirth,
-              retirementAge,
+              plannedRetirementDate,
               lifeExpectancy,
-              () -> sampleNormal(mean, stdDev));
+              () -> sampleNormal(monthlyMean, monthlyStdDev));
 
       allTrials.add(trialBalances);
 
@@ -67,7 +70,15 @@ public class MonteCarloEngine {
     int projectionLength = allTrials.isEmpty() ? 0 : allTrials.get(0).size();
     List<PercentilePoint> percentileBalances = new ArrayList<>();
 
-    int currentAge = java.time.Period.between(dateOfBirth, LocalDate.now()).getYears();
+    // Age at the first emitted row (the first retirement-anchor month >= today),
+    // measured at end-of-month so it matches SimulationEngine's deterministic rows.
+    LocalDate today = LocalDate.now().withDayOfMonth(1);
+    LocalDate firstRow = today.withMonth(plannedRetirementDate.getMonthValue());
+    if (firstRow.isBefore(today)) {
+      firstRow = firstRow.plusYears(1);
+    }
+    LocalDate firstRowEndOfMonth = firstRow.withDayOfMonth(firstRow.lengthOfMonth());
+    int firstRowAge = java.time.Period.between(dateOfBirth, firstRowEndOfMonth).getYears();
 
     for (int yearIdx = 0; yearIdx < projectionLength; yearIdx++) {
       List<BigDecimal> yearValues = new ArrayList<>();
@@ -83,7 +94,7 @@ public class MonteCarloEngine {
 
       percentileBalances.add(
           new PercentilePoint(
-              currentAge + yearIdx,
+              firstRowAge + yearIdx,
               percentile(yearValues, 10),
               percentile(yearValues, 25),
               percentile(yearValues, 50),

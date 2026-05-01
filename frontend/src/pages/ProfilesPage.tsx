@@ -21,6 +21,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { listUserProfiles, createUserProfile, deleteUserProfile } from "../api";
 import type { FilingStatus } from "../types";
+import { formatMonthYear } from "../utils";
 
 const FILING_STATUSES: { value: FilingStatus; label: string }[] = [
   { value: "SINGLE", label: "Single" },
@@ -32,7 +33,7 @@ const FILING_STATUSES: { value: FilingStatus; label: string }[] = [
 const emptyForm = {
   name: "",
   dateOfBirth: "",
-  plannedRetirementAge: 65,
+  plannedRetirementDate: "",
   lifeExpectancy: 90,
   filingStatus: "SINGLE" as FilingStatus,
 };
@@ -112,7 +113,7 @@ export default function ProfilesPage() {
               <ListItemButton onClick={() => navigate(`/profiles/${p.id}`)}>
                 <ListItemText
                   primary={p.name}
-                  secondary={`Retire at ${p.plannedRetirementAge} · Life expectancy ${p.lifeExpectancy} · ${p.filingStatus.replace(/_/g, " ")}`}
+                  secondary={`Retire ${formatMonthYear(p.plannedRetirementDate)} · Life expectancy ${p.lifeExpectancy} · ${p.filingStatus.replace(/_/g, " ")}`}
                 />
               </ListItemButton>
             </ListItem>
@@ -140,11 +141,13 @@ export default function ProfilesPage() {
             slotProps={{ inputLabel: { shrink: true } }}
           />
           <TextField
-            label="Planned Retirement Age"
-            type="number"
-            value={form.plannedRetirementAge}
-            onChange={(e) => setForm({ ...form, plannedRetirementAge: Number(e.target.value) })}
+            label="Planned Retirement Date"
+            type="date"
+            value={form.plannedRetirementDate}
+            onChange={(e) => setForm({ ...form, plannedRetirementDate: e.target.value })}
             fullWidth
+            required
+            slotProps={{ inputLabel: { shrink: true } }}
           />
           <TextField
             label="Life Expectancy"
@@ -172,7 +175,7 @@ export default function ProfilesPage() {
           <Button
             onClick={handleCreate}
             variant="contained"
-            disabled={!form.name || !form.dateOfBirth}
+            disabled={!form.name || !form.dateOfBirth || !form.plannedRetirementDate}
           >
             Create
           </Button>

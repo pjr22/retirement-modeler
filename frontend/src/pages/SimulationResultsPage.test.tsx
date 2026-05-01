@@ -49,7 +49,7 @@ const sampleScenario = {
     inflationRate: 0.03,
     withdrawalStrategy: "FIXED_PERCENTAGE" as const,
     withdrawalPercentage: 0.04,
-    withdrawalFixedAmount: null,
+    withdrawalMonthlyAmount: null,
     standardDeviation: 0.15,
     monteCarloTrials: 10,
     flatTaxRate: 0.22,
@@ -64,32 +64,32 @@ const sampleSimulation = {
   deterministicProjection: [
     {
       age: 36,
-      year: 2026,
-      totalBalance: 500000,
-      totalContributions: 0,
-      totalWithdrawals: 0,
-      totalIncome: 0,
-      totalTax: 0,
+      date: "2026-10-01",
+      balance: 500000,
+      yearContributions: 0,
+      yearWithdrawals: 0,
+      yearIncome: 0,
+      yearTax: 0,
       inflationFactor: 1,
     },
     {
       age: 65,
-      year: 2055,
-      totalBalance: 2500000,
-      totalContributions: 690000,
-      totalWithdrawals: 0,
-      totalIncome: 0,
-      totalTax: 0,
+      date: "2055-10-01",
+      balance: 2500000,
+      yearContributions: 690000,
+      yearWithdrawals: 0,
+      yearIncome: 0,
+      yearTax: 0,
       inflationFactor: 2.3,
     },
     {
       age: 90,
-      year: 2080,
-      totalBalance: 800000,
-      totalContributions: 690000,
-      totalWithdrawals: 1200000,
-      totalIncome: 0,
-      totalTax: 264000,
+      date: "2080-10-01",
+      balance: 800000,
+      yearContributions: 690000,
+      yearWithdrawals: 1200000,
+      yearIncome: 0,
+      yearTax: 264000,
       inflationFactor: 4.5,
     },
   ],
@@ -110,7 +110,7 @@ describe("SimulationResultsPage", () => {
     vi.clearAllMocks();
   });
 
-  it("loads and displays simulation results", async () => {
+  it("loads and shows deterministic series stats by default", async () => {
     vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
     vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
 
@@ -123,11 +123,35 @@ describe("SimulationResultsPage", () => {
       expect(screen.getByText("Simulation Results")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("85.0%")).toBeInTheDocument();
-    expect(screen.getByText("55.0")).toBeInTheDocument();
+    // The deterministic series ends at $800,000 (positive), so it survives.
     expect(screen.getAllByText("$800,000").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("Survives")).toBeInTheDocument();
+    expect(screen.getByText("Never")).toBeInTheDocument();
+    // Overall MC success rate badge.
+    expect(screen.getByText(/Overall MC success: 85\.0%/)).toBeInTheDocument();
     expect(screen.getByText("Test Scenario")).toBeInTheDocument();
+  });
+
+  it("switches metrics when a different series is selected", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Simulation Results")).toBeInTheDocument();
+    });
+
+    // Open the series selector and pick the 90th percentile.
+    await user.click(screen.getByRole("combobox", { name: /show statistics for/i }));
+    await user.click(screen.getByRole("option", { name: /90th percentile/i }));
+
+    // 90th percentile last entry in the sample is 1,600,000.
+    expect(screen.getAllByText("$1,600,000").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows error when simulation fails to load", async () => {
@@ -157,6 +181,7 @@ describe("SimulationResultsPage", () => {
       expect(screen.getByText("Simulation Results")).toBeInTheDocument();
     });
 
+    // Year-by-year table is collapsed by default; the params section also has its own table.
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
     await user.click(screen.getByText("Show Table"));
@@ -167,5 +192,31 @@ describe("SimulationResultsPage", () => {
     });
 
     await user.click(screen.getByText("Hide Table"));
+  });
+
+  it("renders Scenario Parameters section with MC trial count", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Scenario Parameters")).toBeInTheDocument();
+    });
+
+    // Expand the params section (MUI Collapse keeps content mounted, so we
+    // can't reliably assert on absence — just confirm content is present
+    // after expanding).
+    const showButtons = screen.getAllByRole("button", { name: /^show$/i });
+    await user.click(showButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Monte Carlo Trials")).toBeInTheDocument();
+      expect(screen.getByText("10")).toBeInTheDocument();
+    });
   });
 });

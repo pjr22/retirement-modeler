@@ -61,7 +61,7 @@ public class SimulationService {
             profile.getIncomeSources(),
             assumptions,
             profile.getDateOfBirth(),
-            profile.getPlannedRetirementAge(),
+            profile.getPlannedRetirementDate(),
             profile.getLifeExpectancy());
 
     int trials =
@@ -74,7 +74,7 @@ public class SimulationService {
             profile.getIncomeSources(),
             assumptions,
             profile.getDateOfBirth(),
-            profile.getPlannedRetirementAge(),
+            profile.getPlannedRetirementDate(),
             profile.getLifeExpectancy(),
             trials);
 

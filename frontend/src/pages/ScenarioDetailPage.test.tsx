@@ -49,7 +49,7 @@ const sampleScenario = {
     inflationRate: 0.03,
     withdrawalStrategy: "FIXED_PERCENTAGE" as const,
     withdrawalPercentage: 0.04,
-    withdrawalFixedAmount: null,
+    withdrawalMonthlyAmount: null,
     standardDeviation: 0.12,
     monteCarloTrials: 1000,
     flatTaxRate: 0.22,
@@ -66,6 +66,7 @@ const sampleAccounts = [
     annualContribution: 23000,
     monthlyBenefit: null,
     benefitStartAge: null,
+    inflationAdjusted: false,
   },
   {
     id: "acc-2",
@@ -76,6 +77,7 @@ const sampleAccounts = [
     annualContribution: 7000,
     monthlyBenefit: null,
     benefitStartAge: null,
+    inflationAdjusted: false,
   },
 ];
 

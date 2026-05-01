@@ -52,7 +52,7 @@ public class UserProfileService {
     UserProfile existing = getByIdAndOwnerId(id, ownerId);
     existing.setName(profile.getName());
     existing.setDateOfBirth(profile.getDateOfBirth());
-    existing.setPlannedRetirementAge(profile.getPlannedRetirementAge());
+    existing.setPlannedRetirementDate(profile.getPlannedRetirementDate());
     existing.setLifeExpectancy(profile.getLifeExpectancy());
     existing.setFilingStatus(profile.getFilingStatus());
     List<IncomeSource> incomeSources = ensureIncomeSourceIds(profile.getIncomeSources());
@@ -76,7 +76,8 @@ public class UserProfileService {
                     is.getId() != null ? is.getId() : UUID.randomUUID(),
                     is.getName(),
                     is.getAnnualAmount(),
-                    is.getEndAge()))
+                    is.getEndAge(),
+                    is.isInflationAdjusted()))
         .toList();
   }
 

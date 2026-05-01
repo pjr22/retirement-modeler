@@ -42,7 +42,7 @@ const sampleProfile = {
   id: "prof-1",
   name: "Alice",
   dateOfBirth: "1990-01-01",
-  plannedRetirementAge: 65,
+  plannedRetirementDate: "2055-01-01",
   lifeExpectancy: 90,
   filingStatus: "SINGLE" as const,
   incomeSources: [],
@@ -66,7 +66,7 @@ describe("ProfilesPage", () => {
     renderWithRouter(<ProfilesPage />);
     await waitFor(() => {
       expect(screen.getByText("Alice")).toBeInTheDocument();
-      expect(screen.getByText(/Retire at 65/)).toBeInTheDocument();
+      expect(screen.getByText(/Retire JAN 2055/)).toBeInTheDocument();
     });
   });
 
@@ -86,8 +86,11 @@ describe("ProfilesPage", () => {
 
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByRole("textbox", { name: /name/i }), "Bob");
-    const dateInput = dialog.querySelector('input[type="date"]') as HTMLInputElement;
-    await user.type(dateInput, "1990-01-15");
+    const dateInputs = dialog.querySelectorAll(
+      'input[type="date"]',
+    ) as NodeListOf<HTMLInputElement>;
+    await user.type(dateInputs[0], "1990-01-15"); // date of birth
+    await user.type(dateInputs[1], "2055-01-15"); // planned retirement date
 
     const dialogCreateBtn = within(dialog)
       .getAllByRole("button")

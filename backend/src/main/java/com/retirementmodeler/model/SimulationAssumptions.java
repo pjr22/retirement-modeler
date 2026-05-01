@@ -17,7 +17,7 @@ public class SimulationAssumptions {
 
   private BigDecimal withdrawalPercentage;
 
-  private BigDecimal withdrawalFixedAmount;
+  private BigDecimal withdrawalMonthlyAmount;
 
   private BigDecimal standardDeviation;
 
@@ -32,7 +32,7 @@ public class SimulationAssumptions {
       BigDecimal inflationRate,
       WithdrawalStrategy withdrawalStrategy,
       BigDecimal withdrawalPercentage,
-      BigDecimal withdrawalFixedAmount,
+      BigDecimal withdrawalMonthlyAmount,
       BigDecimal standardDeviation,
       Integer monteCarloTrials,
       BigDecimal flatTaxRate) {
@@ -40,7 +40,7 @@ public class SimulationAssumptions {
     this.inflationRate = inflationRate;
     this.withdrawalStrategy = withdrawalStrategy;
     this.withdrawalPercentage = withdrawalPercentage;
-    this.withdrawalFixedAmount = withdrawalFixedAmount;
+    this.withdrawalMonthlyAmount = withdrawalMonthlyAmount;
     this.standardDeviation = standardDeviation;
     this.monteCarloTrials = monteCarloTrials != null ? monteCarloTrials : 1000;
     this.flatTaxRate = flatTaxRate;
@@ -78,12 +78,12 @@ public class SimulationAssumptions {
     this.withdrawalPercentage = withdrawalPercentage;
   }
 
-  public BigDecimal getWithdrawalFixedAmount() {
-    return withdrawalFixedAmount;
+  public BigDecimal getWithdrawalMonthlyAmount() {
+    return withdrawalMonthlyAmount;
   }
 
-  public void setWithdrawalFixedAmount(BigDecimal withdrawalFixedAmount) {
-    this.withdrawalFixedAmount = withdrawalFixedAmount;
+  public void setWithdrawalMonthlyAmount(BigDecimal withdrawalMonthlyAmount) {
+    this.withdrawalMonthlyAmount = withdrawalMonthlyAmount;
   }
 
   public BigDecimal getStandardDeviation() {

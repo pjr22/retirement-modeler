@@ -30,7 +30,7 @@ const defaultAssumptions: SimulationAssumptions = {
   inflationRate: 0.03,
   withdrawalStrategy: "FIXED_PERCENTAGE",
   withdrawalPercentage: 0.04,
-  withdrawalFixedAmount: null,
+  withdrawalMonthlyAmount: null,
   standardDeviation: 0.15,
   monteCarloTrials: 1000,
   flatTaxRate: 0.22,
@@ -74,7 +74,11 @@ export default function ScenarioDetailPage() {
   useEffect(() => {
     if (isNew && profileId) {
       listAccounts(profileId)
-        .then((res) => setAccounts(res.data))
+        .then((res) => {
+          setAccounts(res.data);
+          // For new scenarios, default to all accounts selected.
+          setForm((prev) => ({ ...prev, accountIds: res.data.map((a) => a.id) }));
+        })
         .catch(() => {});
     } else if (scenarioId) {
       loadScenario();
@@ -108,6 +112,14 @@ export default function ScenarioDetailPage() {
         ? prev.accountIds.filter((id) => id !== accountId)
         : [...prev.accountIds, accountId],
     }));
+  };
+
+  const selectAllAccounts = () => {
+    setForm((prev) => ({ ...prev, accountIds: accounts.map((a) => a.id) }));
+  };
+
+  const deselectAllAccounts = () => {
+    setForm((prev) => ({ ...prev, accountIds: [] }));
   };
 
   const updateAssumptions = (patch: Partial<SimulationAssumptions>) => {
@@ -193,9 +205,21 @@ export default function ScenarioDetailPage() {
       </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Accounts
-        </Typography>
+        <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Accounts
+          </Typography>
+          {accounts.length > 0 && (
+            <>
+              <Button size="small" onClick={selectAllAccounts} sx={{ mr: 1 }}>
+                Select all
+              </Button>
+              <Button size="small" onClick={deselectAllAccounts}>
+                Deselect all
+              </Button>
+            </>
+          )}
+        </Box>
         {accounts.length === 0 ? (
           <Typography color="text.secondary">No accounts available.</Typography>
         ) : (
@@ -277,7 +301,7 @@ export default function ScenarioDetailPage() {
                 onChange={(e) =>
                   updateAssumptions({
                     withdrawalPercentage: Number(e.target.value) || null,
-                    withdrawalFixedAmount: null,
+                    withdrawalMonthlyAmount: null,
                   })
                 }
                 fullWidth
@@ -288,12 +312,12 @@ export default function ScenarioDetailPage() {
           {form.assumptions.withdrawalStrategy === "FIXED_DOLLAR" && (
             <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <TextField
-                label="Annual Withdrawal Amount"
+                label="Monthly Withdrawal Amount"
                 type="number"
-                value={form.assumptions.withdrawalFixedAmount ?? ""}
+                value={form.assumptions.withdrawalMonthlyAmount ?? ""}
                 onChange={(e) =>
                   updateAssumptions({
-                    withdrawalFixedAmount: Number(e.target.value) || null,
+                    withdrawalMonthlyAmount: Number(e.target.value) || null,
                     withdrawalPercentage: null,
                   })
                 }

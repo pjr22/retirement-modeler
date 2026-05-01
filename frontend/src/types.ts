@@ -22,13 +22,14 @@ export interface IncomeSource {
   name: string;
   annualAmount: number;
   endAge: number | null;
+  inflationAdjusted: boolean;
 }
 
 export interface UserProfile {
   id: string;
   name: string;
   dateOfBirth: string;
-  plannedRetirementAge: number;
+  plannedRetirementDate: string;
   lifeExpectancy: number;
   filingStatus: FilingStatus;
   incomeSources: IncomeSource[];
@@ -43,6 +44,7 @@ export interface Account {
   annualContribution: number | null;
   monthlyBenefit: number | null;
   benefitStartAge: number | null;
+  inflationAdjusted: boolean;
 }
 
 export interface SimulationAssumptions {
@@ -50,7 +52,7 @@ export interface SimulationAssumptions {
   inflationRate: number;
   withdrawalStrategy: WithdrawalStrategy;
   withdrawalPercentage: number | null;
-  withdrawalFixedAmount: number | null;
+  withdrawalMonthlyAmount: number | null;
   standardDeviation: number;
   monteCarloTrials: number;
   flatTaxRate: number;
@@ -67,12 +69,12 @@ export interface Scenario {
 
 export interface YearlyProjection {
   age: number;
-  year: number;
-  totalBalance: number;
-  totalContributions: number;
-  totalWithdrawals: number;
-  totalIncome: number;
-  totalTax: number;
+  date: string; // ISO YYYY-MM-DD; the row anchor (retirement-month)
+  balance: number;
+  yearContributions: number;
+  yearWithdrawals: number;
+  yearIncome: number;
+  yearTax: number;
   inflationFactor: number;
 }
 

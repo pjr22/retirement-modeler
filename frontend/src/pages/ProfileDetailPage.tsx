@@ -16,6 +16,8 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
@@ -25,6 +27,7 @@ import SaveIcon from "@mui/icons-material/Save";
 import CancelIcon from "@mui/icons-material/Cancel";
 import { getUserProfile, updateUserProfile } from "../api";
 import type { UserProfile, FilingStatus, IncomeSource } from "../types";
+import { formatLongDate } from "../utils";
 
 const FILING_STATUSES: { value: FilingStatus; label: string }[] = [
   { value: "SINGLE", label: "Single" },
@@ -42,7 +45,7 @@ export default function ProfileDetailPage() {
   const [form, setForm] = useState({
     name: "",
     dateOfBirth: "",
-    plannedRetirementAge: 65,
+    plannedRetirementDate: "",
     lifeExpectancy: 90,
     filingStatus: "SINGLE" as FilingStatus,
   });
@@ -51,6 +54,7 @@ export default function ProfileDetailPage() {
     name: "",
     annualAmount: 0,
     endAge: null as number | null,
+    inflationAdjusted: true,
   });
 
   const loadProfile = useCallback(async () => {
@@ -61,7 +65,7 @@ export default function ProfileDetailPage() {
       setForm({
         name: res.data.name,
         dateOfBirth: res.data.dateOfBirth,
-        plannedRetirementAge: res.data.plannedRetirementAge,
+        plannedRetirementDate: res.data.plannedRetirementDate,
         lifeExpectancy: res.data.lifeExpectancy,
         filingStatus: res.data.filingStatus,
       });
@@ -89,7 +93,7 @@ export default function ProfileDetailPage() {
   const addIncomeSource = () => {
     if (!newIncome.name) return;
     setIncomeSources([...incomeSources, { id: crypto.randomUUID(), ...newIncome }]);
-    setNewIncome({ name: "", annualAmount: 0, endAge: null });
+    setNewIncome({ name: "", annualAmount: 0, endAge: null, inflationAdjusted: true });
   };
 
   const removeIncomeSource = (id: string) => {
@@ -165,12 +169,14 @@ export default function ProfileDetailPage() {
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField
-              label="Planned Retirement Age"
-              type="number"
-              value={form.plannedRetirementAge}
-              onChange={(e) => setForm({ ...form, plannedRetirementAge: Number(e.target.value) })}
+              label="Planned Retirement Date"
+              type="date"
+              value={form.plannedRetirementDate}
+              onChange={(e) => setForm({ ...form, plannedRetirementDate: e.target.value })}
               fullWidth
               disabled={!editing}
+              slotProps={{ inputLabel: { shrink: true } }}
+              helperText={!editing ? formatLongDate(form.plannedRetirementDate) : undefined}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -213,6 +219,7 @@ export default function ProfileDetailPage() {
                 <TableCell>Name</TableCell>
                 <TableCell align="right">Annual Amount</TableCell>
                 <TableCell align="right">End Age</TableCell>
+                <TableCell align="center">Inflation-Adjusted</TableCell>
                 {editing && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
@@ -222,6 +229,7 @@ export default function ProfileDetailPage() {
                   <TableCell>{is.name}</TableCell>
                   <TableCell align="right">${is.annualAmount.toLocaleString()}</TableCell>
                   <TableCell align="right">{is.endAge ?? "Ongoing"}</TableCell>
+                  <TableCell align="center">{is.inflationAdjusted ? "Yes" : "No"}</TableCell>
                   {editing && (
                     <TableCell align="right">
                       <IconButton
@@ -265,6 +273,17 @@ export default function ProfileDetailPage() {
               }
               size="small"
               placeholder="Ongoing"
+            />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={newIncome.inflationAdjusted}
+                  onChange={(e) =>
+                    setNewIncome({ ...newIncome, inflationAdjusted: e.target.checked })
+                  }
+                />
+              }
+              label="Inflation-adjusted"
             />
             <Button startIcon={<AddIcon />} onClick={addIncomeSource} disabled={!newIncome.name}>
               Add

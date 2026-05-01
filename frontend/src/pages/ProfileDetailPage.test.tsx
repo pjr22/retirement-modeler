@@ -42,10 +42,18 @@ const sampleProfile = {
   id: "prof-1",
   name: "Alice",
   dateOfBirth: "1990-01-01",
-  plannedRetirementAge: 65,
+  plannedRetirementDate: "2055-01-01",
   lifeExpectancy: 90,
   filingStatus: "SINGLE" as const,
-  incomeSources: [{ id: "inc-1", name: "Salary", annualAmount: 120000, endAge: 65 }],
+  incomeSources: [
+    {
+      id: "inc-1",
+      name: "Salary",
+      annualAmount: 120000,
+      endAge: 65,
+      inflationAdjusted: true,
+    },
+  ],
 };
 
 describe("ProfileDetailPage", () => {

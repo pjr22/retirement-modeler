@@ -45,7 +45,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                         {
                           "name": "Owner",
                           "dateOfBirth": "1990-01-01",
-                          "plannedRetirementAge": 65,
+                          "plannedRetirementDate": "2055-01-01",
                           "lifeExpectancy": 90,
                           "filingStatus": "SINGLE",
                           "incomeSources": []

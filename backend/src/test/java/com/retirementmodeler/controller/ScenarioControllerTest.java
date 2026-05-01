@@ -31,7 +31,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                         {
                           "name": "Test User",
                           "dateOfBirth": "1985-03-20",
-                          "plannedRetirementAge": 65,
+                          "plannedRetirementDate": "2050-03-20",
                           "lifeExpectancy": 90,
                           "filingStatus": "SINGLE",
                           "incomeSources": []

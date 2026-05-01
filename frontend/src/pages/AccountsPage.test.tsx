@@ -48,6 +48,7 @@ const sampleAccounts = [
     annualContribution: 23000,
     monthlyBenefit: null,
     benefitStartAge: null,
+    inflationAdjusted: false,
   },
   {
     id: "acc-2",
@@ -58,6 +59,7 @@ const sampleAccounts = [
     annualContribution: null,
     monthlyBenefit: 2500,
     benefitStartAge: 65,
+    inflationAdjusted: false,
   },
 ];
 

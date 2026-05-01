@@ -30,7 +30,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                             {
                               "name": "Jane Doe",
                               "dateOfBirth": "1990-06-15",
-                              "plannedRetirementAge": 65,
+                              "plannedRetirementDate": "2055-06-15",
                               "lifeExpectancy": 90,
                               "filingStatus": "SINGLE",
                               "incomeSources": []
@@ -40,7 +40,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
           .andExpect(jsonPath("$.id").exists())
           .andExpect(jsonPath("$.name").value("Jane Doe"))
           .andExpect(jsonPath("$.dateOfBirth").value("1990-06-15"))
-          .andExpect(jsonPath("$.plannedRetirementAge").value(65))
+          .andExpect(jsonPath("$.plannedRetirementDate").value("2055-06-15"))
           .andExpect(jsonPath("$.lifeExpectancy").value(90))
           .andExpect(jsonPath("$.filingStatus").value("SINGLE"))
           .andExpect(jsonPath("$.incomeSources").isArray())
@@ -58,7 +58,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                             {
                               "name": "John",
                               "dateOfBirth": "1985-01-01",
-                              "plannedRetirementAge": 60,
+                              "plannedRetirementDate": "2045-01-01",
                               "lifeExpectancy": 85,
                               "filingStatus": "MARRIED_FILING_JOINTLY",
                               "incomeSources": [
@@ -131,7 +131,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                             {
                               "name": "New Name",
                               "dateOfBirth": "1990-01-01",
-                              "plannedRetirementAge": 67,
+                              "plannedRetirementDate": "2057-01-01",
                               "lifeExpectancy": 95,
                               "filingStatus": "MARRIED_FILING_JOINTLY",
                               "incomeSources": []
@@ -140,7 +140,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.id").value(id))
           .andExpect(jsonPath("$.name").value("New Name"))
-          .andExpect(jsonPath("$.plannedRetirementAge").value(67));
+          .andExpect(jsonPath("$.plannedRetirementDate").value("2057-01-01"));
     }
 
     @Test
@@ -154,7 +154,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                             {
                               "name": "Test",
                               "dateOfBirth": "1990-01-01",
-                              "plannedRetirementAge": 65,
+                              "plannedRetirementDate": "2055-01-01",
                               "lifeExpectancy": 90,
                               "filingStatus": "SINGLE",
                               "incomeSources": []
@@ -190,7 +190,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                                 {
                                   "name": "%s",
                                   "dateOfBirth": "1990-01-01",
-                                  "plannedRetirementAge": 65,
+                                  "plannedRetirementDate": "2055-01-01",
                                   "lifeExpectancy": 90,
                                   "filingStatus": "SINGLE",
                                   "incomeSources": []

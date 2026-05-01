@@ -32,7 +32,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
                         {
                           "name": "Sim Test User",
                           "dateOfBirth": "1990-01-01",
-                          "plannedRetirementAge": 65,
+                          "plannedRetirementDate": "2055-01-01",
                           "lifeExpectancy": 90,
                           "filingStatus": "SINGLE",
                           "incomeSources": []
@@ -81,8 +81,8 @@ class SimulationControllerTest extends BaseIntegrationTest {
           .andExpect(jsonPath("$.deterministicProjection").isArray())
           .andExpect(jsonPath("$.deterministicProjection", hasSize(greaterThanOrEqualTo(1))))
           .andExpect(jsonPath("$.deterministicProjection[0].age").exists())
-          .andExpect(jsonPath("$.deterministicProjection[0].year").exists())
-          .andExpect(jsonPath("$.deterministicProjection[0].totalBalance").exists())
+          .andExpect(jsonPath("$.deterministicProjection[0].date").exists())
+          .andExpect(jsonPath("$.deterministicProjection[0].balance").exists())
           .andExpect(jsonPath("$.monteCarloSummary.trials").value(10))
           .andExpect(jsonPath("$.monteCarloSummary.successRate").exists())
           .andExpect(
