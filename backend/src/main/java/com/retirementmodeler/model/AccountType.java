@@ -7,7 +7,5 @@ public enum AccountType {
   ROTH_IRA,
   TAXABLE_BROKERAGE,
   SAVINGS,
-  HSA,
-  PENSION,
-  SOCIAL_SECURITY
+  HSA
 }

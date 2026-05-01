@@ -41,8 +41,6 @@ public class AccountService {
     existing.setAccountType(account.getAccountType());
     existing.setBalance(account.getBalance());
     existing.setAnnualContribution(account.getAnnualContribution());
-    existing.setMonthlyBenefit(account.getMonthlyBenefit());
-    existing.setBenefitStartAge(account.getBenefitStartAge());
     return repository.save(existing);
   }
 

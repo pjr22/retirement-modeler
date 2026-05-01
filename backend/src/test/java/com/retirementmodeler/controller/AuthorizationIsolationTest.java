@@ -18,14 +18,15 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Confirms that one authenticated user cannot read or mutate another user's profile, accounts,
- * scenarios, or simulations. The default user from BaseIntegrationTest acts as the resource owner;
- * a second user is set up here as the would-be intruder.
+ * income sources, scenarios, or simulations. The default user from BaseIntegrationTest acts as the
+ * resource owner; a second user is set up here as the would-be intruder.
  */
 class AuthorizationIsolationTest extends BaseIntegrationTest {
 
   private CustomUserDetails otherUserDetails;
   private String ownersProfileId;
   private String ownersAccountId;
+  private String ownersIncomeSourceId;
   private String ownersScenarioId;
   private String ownersSimulationId;
 
@@ -47,8 +48,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                           "dateOfBirth": "1990-01-01",
                           "plannedRetirementDate": "2055-01-01",
                           "lifeExpectancy": 90,
-                          "filingStatus": "SINGLE",
-                          "incomeSources": []
+                          "filingStatus": "SINGLE"
                         }
                         """))
             .andExpect(status().isCreated())
@@ -67,9 +67,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                           "name": "Owner 401k",
                           "accountType": "TRADITIONAL_401K",
                           "balance": 100000,
-                          "annualContribution": 23000,
-                          "monthlyBenefit": null,
-                          "benefitStartAge": null
+                          "annualContribution": 23000
                         }
                         """))
             .andExpect(status().isCreated())
@@ -92,9 +90,9 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                               "assumptions": {
                                 "expectedRateOfReturn": 0.07,
                                 "inflationRate": 0.03,
-                                "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                 "withdrawalPercentage": 0.04,
-                                "withdrawalFixedAmount": null,
+                                "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.15,
                                 "monteCarloTrials": 5,
                                 "flatTaxRate": 0.22
@@ -106,6 +104,27 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
             .andReturn();
     ownersScenarioId =
         objectMapper.readTree(scenarioResult.getResponse().getContentAsString()).get("id").asText();
+
+    MvcResult incomeResult =
+        mockMvc
+            .perform(
+                post("/api/scenarios/{scenarioId}/incomeSources", ownersScenarioId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Owner Pension",
+                          "type": "PENSION",
+                          "monthlyAmount": 2000,
+                          "startDate": null,
+                          "endDate": null,
+                          "inflationAdjusted": false
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn();
+    ownersIncomeSourceId =
+        objectMapper.readTree(incomeResult.getResponse().getContentAsString()).get("id").asText();
 
     MvcResult simulationResult =
         mockMvc
@@ -147,9 +166,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                       "name": "Hijacked",
                       "accountType": "SAVINGS",
                       "balance": 1,
-                      "annualContribution": null,
-                      "monthlyBenefit": null,
-                      "benefitStartAge": null
+                      "annualContribution": null
                     }
                     """))
         .andExpect(status().isNotFound());
@@ -159,6 +176,44 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
   void otherUserCannotDeleteOwnersAccount() throws Exception {
     mockMvc
         .perform(delete("/api/accounts/{id}", ownersAccountId).with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotListOwnersIncomeSources() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/scenarios/{scenarioId}/incomeSources", ownersScenarioId)
+                .with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotUpdateOwnersIncomeSource() throws Exception {
+    mockMvc
+        .perform(
+            put("/api/incomeSources/{id}", ownersIncomeSourceId)
+                .with(user(otherUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "name": "Hijacked",
+                      "type": "OTHER",
+                      "monthlyAmount": 1,
+                      "startDate": null,
+                      "endDate": null,
+                      "inflationAdjusted": false
+                    }
+                    """))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotDeleteOwnersIncomeSource() throws Exception {
+    mockMvc
+        .perform(
+            delete("/api/incomeSources/{id}", ownersIncomeSourceId).with(user(otherUserDetails)))
         .andExpect(status().isNotFound());
   }
 
@@ -193,9 +248,9 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                       "assumptions": {
                         "expectedRateOfReturn": 0.07,
                         "inflationRate": 0.03,
-                        "withdrawalStrategy": "FIXED_PERCENTAGE",
+                        "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                         "withdrawalPercentage": 0.04,
-                        "withdrawalFixedAmount": null,
+                        "withdrawalMonthlyAmount": null,
                         "standardDeviation": 0.15,
                         "monteCarloTrials": 5,
                         "flatTaxRate": 0.22

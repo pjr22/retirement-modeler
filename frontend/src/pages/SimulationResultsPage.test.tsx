@@ -47,7 +47,7 @@ const sampleScenario = {
   assumptions: {
     expectedRateOfReturn: 0.07,
     inflationRate: 0.03,
-    withdrawalStrategy: "FIXED_PERCENTAGE" as const,
+    withdrawalStrategy: "PORTFOLIO_PERCENTAGE" as const,
     withdrawalPercentage: 0.04,
     withdrawalMonthlyAmount: null,
     standardDeviation: 0.15,

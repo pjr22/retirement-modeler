@@ -62,7 +62,7 @@ export default function ProfilesPage() {
 
   const handleCreate = async () => {
     try {
-      await createUserProfile({ ...form, incomeSources: [] });
+      await createUserProfile(form);
       setDialogOpen(false);
       setForm(emptyForm);
       loadProfiles();

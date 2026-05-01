@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithRouter, axiosOk } from "../test/helpers";
 
@@ -16,6 +16,10 @@ vi.mock("../api", () => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  listIncomeSources: vi.fn(),
+  createIncomeSource: vi.fn(),
+  updateIncomeSource: vi.fn(),
+  deleteIncomeSource: vi.fn(),
   listScenarios: vi.fn(),
   getScenario: vi.fn(),
   createScenario: vi.fn(),
@@ -36,7 +40,16 @@ vi.mock("../api", () => ({
   login: vi.fn(),
 }));
 
-import { getScenario, listAccounts, createScenario, updateScenario, runSimulation } from "../api";
+import {
+  getScenario,
+  listAccounts,
+  listIncomeSources,
+  createIncomeSource,
+  deleteIncomeSource,
+  createScenario,
+  updateScenario,
+  runSimulation,
+} from "../api";
 
 const sampleScenario = {
   id: "scen-1",
@@ -47,7 +60,7 @@ const sampleScenario = {
   assumptions: {
     expectedRateOfReturn: 0.05,
     inflationRate: 0.03,
-    withdrawalStrategy: "FIXED_PERCENTAGE" as const,
+    withdrawalStrategy: "PORTFOLIO_PERCENTAGE" as const,
     withdrawalPercentage: 0.04,
     withdrawalMonthlyAmount: null,
     standardDeviation: 0.12,
@@ -64,9 +77,6 @@ const sampleAccounts = [
     accountType: "TRADITIONAL_401K" as const,
     balance: 50000,
     annualContribution: 23000,
-    monthlyBenefit: null,
-    benefitStartAge: null,
-    inflationAdjusted: false,
   },
   {
     id: "acc-2",
@@ -75,15 +85,24 @@ const sampleAccounts = [
     accountType: "ROTH_IRA" as const,
     balance: 30000,
     annualContribution: 7000,
-    monthlyBenefit: null,
-    benefitStartAge: null,
-    inflationAdjusted: false,
   },
 ];
+
+const samplePension = {
+  id: "inc-1",
+  scenarioId: "scen-1",
+  name: "Pension",
+  type: "PENSION" as const,
+  monthlyAmount: 2500,
+  startDate: null,
+  endDate: null,
+  inflationAdjusted: false,
+};
 
 describe("ScenarioDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([]));
   });
 
   it("loads and displays an existing scenario", async () => {
@@ -117,6 +136,106 @@ describe("ScenarioDetailPage", () => {
 
     expect(screen.getByRole("checkbox", { name: /My 401k/ })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /Roth IRA/ })).not.toBeChecked();
+  });
+
+  it("renders the scenario's income sources in a table", async () => {
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+    vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([samplePension]));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("$2,500")).toBeInTheDocument();
+    });
+  });
+
+  it("creates a new income source via the dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+    vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([]));
+    vi.mocked(createIncomeSource).mockResolvedValue(axiosOk(samplePension));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Income Source")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Add Income Source"));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: /name/i }), "Pension");
+    const monthlyField = within(dialog).getByRole("spinbutton", { name: /monthly amount/i });
+    await user.clear(monthlyField);
+    await user.type(monthlyField, "2500");
+
+    const addBtn = within(dialog)
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Add");
+    await user.click(addBtn!);
+
+    await waitFor(() => {
+      expect(createIncomeSource).toHaveBeenCalledWith(
+        "scen-1",
+        expect.objectContaining({ name: "Pension", monthlyAmount: 2500 }),
+      );
+    });
+  });
+
+  it("deletes an income source", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+    vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([samplePension]));
+    vi.mocked(deleteIncomeSource).mockResolvedValue(axiosOk(undefined));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("$2,500")).toBeInTheDocument();
+    });
+
+    // Find the delete icon button inside the income-sources table row.
+    const rows = screen.getAllByRole("row");
+    const dataRow = rows.find((r) => within(r).queryByText("$2,500"));
+    expect(dataRow).toBeDefined();
+    const deleteBtn = within(dataRow!)
+      .getAllByRole("button")
+      .find((b) => b.querySelector('[data-testid="DeleteIcon"]'));
+    await user.click(deleteBtn!);
+
+    await waitFor(() => {
+      expect(deleteIncomeSource).toHaveBeenCalledWith("inc-1");
+    });
+  });
+
+  it("disables income-source CRUD when creating a new (unsaved) scenario", async () => {
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/new?profileId=prof-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Create Scenario")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Add Income Source")).toBeDisabled();
+    expect(
+      screen.getByText(/Save the scenario first, then add income sources/i),
+    ).toBeInTheDocument();
   });
 
   it("saves changes to an existing scenario", async () => {

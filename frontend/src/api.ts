@@ -1,5 +1,12 @@
 import axios from "axios";
-import type { UserProfile, Account, Scenario, SimulationResult, AuthResponse } from "./types";
+import type {
+  UserProfile,
+  Account,
+  IncomeSource,
+  Scenario,
+  SimulationResult,
+  AuthResponse,
+} from "./types";
 
 const TOKEN_KEY = "retirement_modeler_token";
 const USER_ID_KEY = "retirement_modeler_user_id";
@@ -69,6 +76,16 @@ export const createAccount = (profileId: string, account: Omit<Account, "id" | "
 export const updateAccount = (id: string, account: Omit<Account, "id" | "userProfileId">) =>
   api.put<Account>(`/api/accounts/${id}`, account);
 export const deleteAccount = (id: string) => api.delete(`/api/accounts/${id}`);
+
+export const listIncomeSources = (scenarioId: string) =>
+  api.get<IncomeSource[]>(`/api/scenarios/${scenarioId}/incomeSources`);
+export const createIncomeSource = (
+  scenarioId: string,
+  source: Omit<IncomeSource, "id" | "scenarioId">,
+) => api.post<IncomeSource>(`/api/scenarios/${scenarioId}/incomeSources`, source);
+export const updateIncomeSource = (id: string, source: Omit<IncomeSource, "id" | "scenarioId">) =>
+  api.put<IncomeSource>(`/api/incomeSources/${id}`, source);
+export const deleteIncomeSource = (id: string) => api.delete(`/api/incomeSources/${id}`);
 
 export const listScenarios = (profileId: string) =>
   api.get<Scenario[]>(`/api/users/${profileId}/scenarios`);

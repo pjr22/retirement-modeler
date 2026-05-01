@@ -16,6 +16,10 @@ vi.mock("../api", () => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  listIncomeSources: vi.fn(),
+  createIncomeSource: vi.fn(),
+  updateIncomeSource: vi.fn(),
+  deleteIncomeSource: vi.fn(),
   listScenarios: vi.fn(),
   getScenario: vi.fn(),
   createScenario: vi.fn(),
@@ -45,15 +49,6 @@ const sampleProfile = {
   plannedRetirementDate: "2055-01-01",
   lifeExpectancy: 90,
   filingStatus: "SINGLE" as const,
-  incomeSources: [
-    {
-      id: "inc-1",
-      name: "Salary",
-      annualAmount: 120000,
-      endAge: 65,
-      inflationAdjusted: true,
-    },
-  ],
 };
 
 describe("ProfileDetailPage", () => {
@@ -74,7 +69,7 @@ describe("ProfileDetailPage", () => {
     });
   });
 
-  it("shows income sources in a table", async () => {
+  it("does not show an Income Sources section (income is per-scenario)", async () => {
     vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
     renderWithRouter(<ProfileDetailPage />, {
       route: "/profiles/prof-1",
@@ -82,9 +77,10 @@ describe("ProfileDetailPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Salary")).toBeInTheDocument();
-      expect(screen.getByText("$120,000")).toBeInTheDocument();
+      expect(screen.getByDisplayValue("Alice")).toBeInTheDocument();
     });
+    expect(screen.queryByText("Income Sources")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add Income Source")).not.toBeInTheDocument();
   });
 
   it("enters edit mode and saves changes", async () => {

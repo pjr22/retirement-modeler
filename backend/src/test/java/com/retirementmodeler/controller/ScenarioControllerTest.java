@@ -33,8 +33,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                           "dateOfBirth": "1985-03-20",
                           "plannedRetirementDate": "2050-03-20",
                           "lifeExpectancy": 90,
-                          "filingStatus": "SINGLE",
-                          "incomeSources": []
+                          "filingStatus": "SINGLE"
                         }
                         """))
             .andExpect(status().isCreated())
@@ -60,9 +59,9 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                               "assumptions": {
                                 "expectedRateOfReturn": 0.05,
                                 "inflationRate": 0.03,
-                                "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                 "withdrawalPercentage": 0.04,
-                                "withdrawalFixedAmount": null,
+                                "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.12,
                                 "monteCarloTrials": 1000,
                                 "flatTaxRate": 0.22
@@ -96,9 +95,9 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                       "assumptions": {
                                         "expectedRateOfReturn": 0.07,
                                         "inflationRate": 0.025,
-                                        "withdrawalStrategy": "FIXED_DOLLAR",
+                                        "withdrawalStrategy": "CASHFLOW_TARGET",
                                         "withdrawalPercentage": null,
-                                        "withdrawalFixedAmount": 80000,
+                                        "withdrawalMonthlyAmount": 6500,
                                         "standardDeviation": 0.15,
                                         "monteCarloTrials": 500,
                                         "flatTaxRate": 0.20
@@ -167,9 +166,9 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                               "assumptions": {
                                 "expectedRateOfReturn": 0.08,
                                 "inflationRate": 0.03,
-                                "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                 "withdrawalPercentage": 0.035,
-                                "withdrawalFixedAmount": null,
+                                "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.18,
                                 "monteCarloTrials": 2000,
                                 "flatTaxRate": 0.24
@@ -198,9 +197,9 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                               "assumptions": {
                                 "expectedRateOfReturn": 0.06,
                                 "inflationRate": 0.03,
-                                "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                 "withdrawalPercentage": 0.04,
-                                "withdrawalFixedAmount": null,
+                                "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.12,
                                 "monteCarloTrials": 1000,
                                 "flatTaxRate": 0.22
@@ -236,9 +235,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                           "name": "Test 401k",
                           "accountType": "TRADITIONAL_401K",
                           "balance": 100000,
-                          "annualContribution": 23000,
-                          "monthlyBenefit": null,
-                          "benefitStartAge": null
+                          "annualContribution": 23000
                         }
                         """))
             .andExpect(status().isCreated())
@@ -262,9 +259,9 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                   "assumptions": {
                                     "expectedRateOfReturn": 0.06,
                                     "inflationRate": 0.03,
-                                    "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                    "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                     "withdrawalPercentage": 0.04,
-                                    "withdrawalFixedAmount": null,
+                                    "withdrawalMonthlyAmount": null,
                                     "standardDeviation": 0.12,
                                     "monteCarloTrials": 1000,
                                     "flatTaxRate": 0.22

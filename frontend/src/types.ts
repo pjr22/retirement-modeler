@@ -11,17 +11,26 @@ export type AccountType =
   | "ROTH_IRA"
   | "TAXABLE_BROKERAGE"
   | "SAVINGS"
-  | "HSA"
-  | "PENSION"
-  | "SOCIAL_SECURITY";
+  | "HSA";
 
-export type WithdrawalStrategy = "FIXED_PERCENTAGE" | "FIXED_DOLLAR";
+export type IncomeType =
+  | "EMPLOYMENT"
+  | "SELF_EMPLOYMENT"
+  | "PENSION"
+  | "SOCIAL_SECURITY"
+  | "RENTAL"
+  | "OTHER";
+
+export type WithdrawalStrategy = "PORTFOLIO_PERCENTAGE" | "CASHFLOW_TARGET";
 
 export interface IncomeSource {
   id: string;
+  scenarioId: string;
   name: string;
-  annualAmount: number;
-  endAge: number | null;
+  type: IncomeType;
+  monthlyAmount: number;
+  startDate: string | null;
+  endDate: string | null;
   inflationAdjusted: boolean;
 }
 
@@ -32,7 +41,6 @@ export interface UserProfile {
   plannedRetirementDate: string;
   lifeExpectancy: number;
   filingStatus: FilingStatus;
-  incomeSources: IncomeSource[];
 }
 
 export interface Account {
@@ -42,9 +50,6 @@ export interface Account {
   accountType: AccountType;
   balance: number;
   annualContribution: number | null;
-  monthlyBenefit: number | null;
-  benefitStartAge: number | null;
-  inflationAdjusted: boolean;
 }
 
 export interface SimulationAssumptions {

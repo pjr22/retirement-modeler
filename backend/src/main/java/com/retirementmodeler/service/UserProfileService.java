@@ -1,7 +1,6 @@
 package com.retirementmodeler.service;
 
 import com.retirementmodeler.exceptions.ResourceNotFoundException;
-import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.User;
 import com.retirementmodeler.model.UserProfile;
 import com.retirementmodeler.repository.UserProfileRepository;
@@ -27,8 +26,6 @@ public class UserProfileService {
             .findById(ownerId)
             .orElseThrow(() -> new ResourceNotFoundException("User not found: " + ownerId));
     profile.setOwner(owner);
-    List<IncomeSource> incomeSources = ensureIncomeSourceIds(profile.getIncomeSources());
-    profile.setIncomeSources(incomeSources);
     return repository.save(profile);
   }
 
@@ -55,30 +52,12 @@ public class UserProfileService {
     existing.setPlannedRetirementDate(profile.getPlannedRetirementDate());
     existing.setLifeExpectancy(profile.getLifeExpectancy());
     existing.setFilingStatus(profile.getFilingStatus());
-    List<IncomeSource> incomeSources = ensureIncomeSourceIds(profile.getIncomeSources());
-    existing.setIncomeSources(incomeSources);
     return repository.save(existing);
   }
 
   public void delete(UUID id, UUID ownerId) {
     getByIdAndOwnerId(id, ownerId);
     repository.deleteById(id);
-  }
-
-  private List<IncomeSource> ensureIncomeSourceIds(List<IncomeSource> sources) {
-    if (sources == null) {
-      return List.of();
-    }
-    return sources.stream()
-        .map(
-            is ->
-                new IncomeSource(
-                    is.getId() != null ? is.getId() : UUID.randomUUID(),
-                    is.getName(),
-                    is.getAnnualAmount(),
-                    is.getEndAge(),
-                    is.isInflationAdjusted()))
-        .toList();
   }
 
   private ResourceNotFoundException notFound(UUID id) {

@@ -67,7 +67,7 @@ describe("ScenariosPage", () => {
           assumptions: {
             expectedRateOfReturn: 0.05,
             inflationRate: 0.03,
-            withdrawalStrategy: "FIXED_PERCENTAGE",
+            withdrawalStrategy: "PORTFOLIO_PERCENTAGE",
             withdrawalPercentage: 0.04,
             withdrawalMonthlyAmount: null,
             standardDeviation: 0.12,

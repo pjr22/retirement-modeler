@@ -32,8 +32,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                               "dateOfBirth": "1990-06-15",
                               "plannedRetirementDate": "2055-06-15",
                               "lifeExpectancy": 90,
-                              "filingStatus": "SINGLE",
-                              "incomeSources": []
+                              "filingStatus": "SINGLE"
                             }
                             """))
           .andExpect(status().isCreated())
@@ -42,36 +41,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
           .andExpect(jsonPath("$.dateOfBirth").value("1990-06-15"))
           .andExpect(jsonPath("$.plannedRetirementDate").value("2055-06-15"))
           .andExpect(jsonPath("$.lifeExpectancy").value(90))
-          .andExpect(jsonPath("$.filingStatus").value("SINGLE"))
-          .andExpect(jsonPath("$.incomeSources").isArray())
-          .andExpect(jsonPath("$.incomeSources").isEmpty());
-    }
-
-    @Test
-    void createsProfileWithIncomeSources() throws Exception {
-      mockMvc
-          .perform(
-              post("/api/users")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(
-                      """
-                            {
-                              "name": "John",
-                              "dateOfBirth": "1985-01-01",
-                              "plannedRetirementDate": "2045-01-01",
-                              "lifeExpectancy": 85,
-                              "filingStatus": "MARRIED_FILING_JOINTLY",
-                              "incomeSources": [
-                                { "name": "Salary", "annualAmount": 120000, "endAge": 60 },
-                                { "name": "Rental", "annualAmount": 24000, "endAge": null }
-                              ]
-                            }
-                            """))
-          .andExpect(status().isCreated())
-          .andExpect(jsonPath("$.incomeSources", hasSize(2)))
-          .andExpect(jsonPath("$.incomeSources[0].name").value("Salary"))
-          .andExpect(jsonPath("$.incomeSources[0].id").exists())
-          .andExpect(jsonPath("$.incomeSources[1].name").value("Rental"));
+          .andExpect(jsonPath("$.filingStatus").value("SINGLE"));
     }
   }
 
@@ -133,8 +103,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                               "dateOfBirth": "1990-01-01",
                               "plannedRetirementDate": "2057-01-01",
                               "lifeExpectancy": 95,
-                              "filingStatus": "MARRIED_FILING_JOINTLY",
-                              "incomeSources": []
+                              "filingStatus": "MARRIED_FILING_JOINTLY"
                             }
                             """))
           .andExpect(status().isOk())
@@ -156,8 +125,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                               "dateOfBirth": "1990-01-01",
                               "plannedRetirementDate": "2055-01-01",
                               "lifeExpectancy": 90,
-                              "filingStatus": "SINGLE",
-                              "incomeSources": []
+                              "filingStatus": "SINGLE"
                             }
                             """))
           .andExpect(status().isNotFound());
@@ -192,8 +160,7 @@ class UserProfileControllerTest extends BaseIntegrationTest {
                                   "dateOfBirth": "1990-01-01",
                                   "plannedRetirementDate": "2055-01-01",
                                   "lifeExpectancy": 90,
-                                  "filingStatus": "SINGLE",
-                                  "incomeSources": []
+                                  "filingStatus": "SINGLE"
                                 }
                                 """,
                         name)))

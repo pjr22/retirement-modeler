@@ -16,8 +16,6 @@ import {
   MenuItem,
   Grid,
   Alert,
-  Checkbox,
-  FormControlLabel,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
@@ -34,8 +32,6 @@ const ACCOUNT_TYPES: { value: AccountType; label: string }[] = [
   { value: "TAXABLE_BROKERAGE", label: "Taxable Brokerage" },
   { value: "SAVINGS", label: "Savings" },
   { value: "HSA", label: "HSA" },
-  { value: "PENSION", label: "Pension" },
-  { value: "SOCIAL_SECURITY", label: "Social Security" },
 ];
 
 const CONTRIBUTION_TYPES: AccountType[] = [
@@ -46,21 +42,11 @@ const CONTRIBUTION_TYPES: AccountType[] = [
   "HSA",
 ];
 
-const BENEFIT_TYPES: AccountType[] = ["PENSION", "SOCIAL_SECURITY"];
-
 interface AccountForm {
   name: string;
   accountType: AccountType;
   balance: number;
   annualContribution: number | null;
-  monthlyBenefit: number | null;
-  benefitStartAge: number | null;
-  inflationAdjusted: boolean;
-}
-
-// Smart default for the inflation-adjusted flag: SS has a COLA, pensions usually don't.
-function defaultInflationAdjusted(type: AccountType): boolean {
-  return type === "SOCIAL_SECURITY";
 }
 
 const emptyForm: AccountForm = {
@@ -68,9 +54,6 @@ const emptyForm: AccountForm = {
   accountType: "TRADITIONAL_401K",
   balance: 0,
   annualContribution: null,
-  monthlyBenefit: null,
-  benefitStartAge: null,
-  inflationAdjusted: false,
 };
 
 export default function AccountsPage() {
@@ -109,9 +92,6 @@ export default function AccountsPage() {
       accountType: account.accountType,
       balance: account.balance,
       annualContribution: account.annualContribution,
-      monthlyBenefit: account.monthlyBenefit,
-      benefitStartAge: account.benefitStartAge,
-      inflationAdjusted: account.inflationAdjusted,
     });
     setDialogOpen(true);
   };
@@ -185,13 +165,6 @@ export default function AccountsPage() {
                       Annual Contribution: {formatCurrency(account.annualContribution)}
                     </Typography>
                   )}
-                  {account.monthlyBenefit != null && (
-                    <Typography variant="body2">
-                      Monthly Benefit: {formatCurrency(account.monthlyBenefit)}
-                      {account.benefitStartAge != null &&
-                        ` starting at age ${account.benefitStartAge}`}
-                    </Typography>
-                  )}
                 </CardContent>
                 <CardActions>
                   <IconButton size="small" onClick={() => openEdit(account)}>
@@ -226,20 +199,13 @@ export default function AccountsPage() {
               setForm({
                 ...form,
                 accountType: newType,
-                balance: BENEFIT_TYPES.includes(newType) ? 0 : form.balance,
                 annualContribution: CONTRIBUTION_TYPES.includes(newType)
                   ? form.annualContribution
                   : null,
-                monthlyBenefit: BENEFIT_TYPES.includes(newType) ? form.monthlyBenefit : null,
-                benefitStartAge: BENEFIT_TYPES.includes(newType) ? form.benefitStartAge : null,
-                // Smart default for the COLA flag when switching to a benefit type:
-                // SS gets true, pension false. User can still toggle.
-                inflationAdjusted: BENEFIT_TYPES.includes(newType)
-                  ? defaultInflationAdjusted(newType)
-                  : false,
               });
             }}
             fullWidth
+            helperText="For pension or Social Security, add an Income Source on the profile page instead."
           >
             {ACCOUNT_TYPES.map((t) => (
               <MenuItem key={t.value} value={t.value}>
@@ -247,15 +213,13 @@ export default function AccountsPage() {
               </MenuItem>
             ))}
           </TextField>
-          {!BENEFIT_TYPES.includes(form.accountType) && (
-            <TextField
-              label="Current Balance"
-              type="number"
-              value={form.balance || ""}
-              onChange={(e) => setForm({ ...form, balance: Number(e.target.value) })}
-              fullWidth
-            />
-          )}
+          <TextField
+            label="Current Balance"
+            type="number"
+            value={form.balance || ""}
+            onChange={(e) => setForm({ ...form, balance: Number(e.target.value) })}
+            fullWidth
+          />
           {CONTRIBUTION_TYPES.includes(form.accountType) && (
             <TextField
               label="Annual Contribution"
@@ -266,40 +230,6 @@ export default function AccountsPage() {
               }
               fullWidth
             />
-          )}
-          {BENEFIT_TYPES.includes(form.accountType) && (
-            <>
-              <TextField
-                label="Monthly Benefit"
-                type="number"
-                value={form.monthlyBenefit ?? ""}
-                onChange={(e) =>
-                  setForm({ ...form, monthlyBenefit: Number(e.target.value) || null })
-                }
-                fullWidth
-              />
-              <TextField
-                label="Benefit Start Age"
-                type="number"
-                value={form.benefitStartAge ?? ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    benefitStartAge: e.target.value ? Number(e.target.value) : null,
-                  })
-                }
-                fullWidth
-              />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={form.inflationAdjusted}
-                    onChange={(e) => setForm({ ...form, inflationAdjusted: e.target.checked })}
-                  />
-                }
-                label="Adjust monthly benefit for inflation each year (e.g. Social Security COLA)"
-              />
-            </>
           )}
         </DialogContent>
         <DialogActions>

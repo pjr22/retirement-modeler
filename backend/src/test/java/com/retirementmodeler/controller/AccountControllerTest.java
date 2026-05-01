@@ -33,8 +33,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                           "dateOfBirth": "1985-03-20",
                           "plannedRetirementDate": "2050-03-20",
                           "lifeExpectancy": 90,
-                          "filingStatus": "SINGLE",
-                          "incomeSources": []
+                          "filingStatus": "SINGLE"
                         }
                         """))
             .andExpect(status().isCreated())
@@ -57,9 +56,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                               "name": "My 401k",
                               "accountType": "TRADITIONAL_401K",
                               "balance": 50000,
-                              "annualContribution": 23000,
-                              "monthlyBenefit": null,
-                              "benefitStartAge": null
+                              "annualContribution": 23000
                             }
                             """))
           .andExpect(status().isCreated())
@@ -69,28 +66,6 @@ class AccountControllerTest extends BaseIntegrationTest {
           .andExpect(jsonPath("$.accountType").value("TRADITIONAL_401K"))
           .andExpect(jsonPath("$.balance").value(50000))
           .andExpect(jsonPath("$.annualContribution").value(23000));
-    }
-
-    @Test
-    void createsPensionAccount() throws Exception {
-      mockMvc
-          .perform(
-              post("/api/users/{profileId}/accounts", profileId)
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(
-                      """
-                            {
-                              "name": "Company Pension",
-                              "accountType": "PENSION",
-                              "balance": 0,
-                              "annualContribution": null,
-                              "monthlyBenefit": 2500,
-                              "benefitStartAge": 65
-                            }
-                            """))
-          .andExpect(status().isCreated())
-          .andExpect(jsonPath("$.monthlyBenefit").value(2500))
-          .andExpect(jsonPath("$.benefitStartAge").value(65));
     }
   }
 
@@ -126,9 +101,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                               "name": "New Name",
                               "accountType": "ROTH_401K",
                               "balance": 75000,
-                              "annualContribution": 23000,
-                              "monthlyBenefit": null,
-                              "benefitStartAge": null
+                              "annualContribution": 23000
                             }
                             """))
           .andExpect(status().isOk())
@@ -150,9 +123,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                               "name": "Test",
                               "accountType": "SAVINGS",
                               "balance": 1000,
-                              "annualContribution": 0,
-                              "monthlyBenefit": null,
-                              "benefitStartAge": null
+                              "annualContribution": 0
                             }
                             """))
           .andExpect(status().isNotFound());
@@ -188,9 +159,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                                   "name": "%s",
                                   "accountType": "%s",
                                   "balance": 10000,
-                                  "annualContribution": 5000,
-                                  "monthlyBenefit": null,
-                                  "benefitStartAge": null
+                                  "annualContribution": 5000
                                 }
                                 """,
                             name, type)))

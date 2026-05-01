@@ -1,35 +1,62 @@
 package com.retirementmodeler.model;
 
-import jakarta.persistence.Embeddable;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.UUID;
 
-@Embeddable
+@Entity
+@Table(name = "income_sources")
 public class IncomeSource {
 
-  private UUID id;
+  @Id @GeneratedValue private UUID id;
+
+  @Column(name = "scenario_id")
+  private UUID scenarioId;
 
   private String name;
 
-  private BigDecimal annualAmount;
+  @Enumerated(EnumType.STRING)
+  private IncomeType type;
 
-  private Integer endAge;
+  private BigDecimal monthlyAmount;
+
+  /** Inclusive lower bound; {@code null} means "active from the start of the simulation." */
+  private LocalDate startDate;
+
+  /** Inclusive upper bound; {@code null} means "active until end of life." */
+  private LocalDate endDate;
 
   /**
-   * Whether this income stream grows with inflation each year. Defaults to {@code true} since most
-   * nominal income (salary, rental income) tracks inflation; user can disable for fixed streams
-   * (e.g. a non-COLA pension paid as an income source rather than a benefit account).
+   * Whether the {@code monthlyAmount} grows with inflation each year. Most nominal income (salary,
+   * rental, Social Security) does; private pensions usually don't.
    */
   private boolean inflationAdjusted = true;
 
   protected IncomeSource() {}
 
   public IncomeSource(
-      UUID id, String name, BigDecimal annualAmount, Integer endAge, boolean inflationAdjusted) {
+      UUID id,
+      UUID scenarioId,
+      String name,
+      IncomeType type,
+      BigDecimal monthlyAmount,
+      LocalDate startDate,
+      LocalDate endDate,
+      boolean inflationAdjusted) {
     this.id = id;
+    this.scenarioId = scenarioId;
     this.name = name;
-    this.annualAmount = annualAmount;
-    this.endAge = endAge;
+    this.type = type;
+    this.monthlyAmount = monthlyAmount;
+    this.startDate = startDate;
+    this.endDate = endDate;
     this.inflationAdjusted = inflationAdjusted;
   }
 
@@ -41,6 +68,14 @@ public class IncomeSource {
     this.id = id;
   }
 
+  public UUID getScenarioId() {
+    return scenarioId;
+  }
+
+  public void setScenarioId(UUID scenarioId) {
+    this.scenarioId = scenarioId;
+  }
+
   public String getName() {
     return name;
   }
@@ -49,20 +84,36 @@ public class IncomeSource {
     this.name = name;
   }
 
-  public BigDecimal getAnnualAmount() {
-    return annualAmount;
+  public IncomeType getType() {
+    return type;
   }
 
-  public void setAnnualAmount(BigDecimal annualAmount) {
-    this.annualAmount = annualAmount;
+  public void setType(IncomeType type) {
+    this.type = type;
   }
 
-  public Integer getEndAge() {
-    return endAge;
+  public BigDecimal getMonthlyAmount() {
+    return monthlyAmount;
   }
 
-  public void setEndAge(Integer endAge) {
-    this.endAge = endAge;
+  public void setMonthlyAmount(BigDecimal monthlyAmount) {
+    this.monthlyAmount = monthlyAmount;
+  }
+
+  public LocalDate getStartDate() {
+    return startDate;
+  }
+
+  public void setStartDate(LocalDate startDate) {
+    this.startDate = startDate;
+  }
+
+  public LocalDate getEndDate() {
+    return endDate;
+  }
+
+  public void setEndDate(LocalDate endDate) {
+    this.endDate = endDate;
   }
 
   public boolean isInflationAdjusted() {

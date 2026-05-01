@@ -16,6 +16,10 @@ vi.mock("../api", () => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  listIncomeSources: vi.fn(),
+  createIncomeSource: vi.fn(),
+  updateIncomeSource: vi.fn(),
+  deleteIncomeSource: vi.fn(),
   listScenarios: vi.fn(),
   getScenario: vi.fn(),
   createScenario: vi.fn(),
@@ -46,20 +50,14 @@ const sampleAccounts = [
     accountType: "TRADITIONAL_401K" as const,
     balance: 50000,
     annualContribution: 23000,
-    monthlyBenefit: null,
-    benefitStartAge: null,
-    inflationAdjusted: false,
   },
   {
     id: "acc-2",
     userProfileId: "prof-1",
-    name: "Company Pension",
-    accountType: "PENSION" as const,
-    balance: 0,
+    name: "Brokerage",
+    accountType: "TAXABLE_BROKERAGE" as const,
+    balance: 100000,
     annualContribution: null,
-    monthlyBenefit: 2500,
-    benefitStartAge: 65,
-    inflationAdjusted: false,
   },
 ];
 
@@ -77,9 +75,8 @@ describe("AccountsPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("My 401k")).toBeInTheDocument();
-      expect(screen.getByText("Company Pension")).toBeInTheDocument();
+      expect(screen.getByText("Brokerage")).toBeInTheDocument();
       expect(screen.getByText(/Annual Contribution.*\$23,000/)).toBeInTheDocument();
-      expect(screen.getByText(/Monthly Benefit.*\$2,500/)).toBeInTheDocument();
     });
   });
 
@@ -118,10 +115,9 @@ describe("AccountsPage", () => {
     });
   });
 
-  it("shows benefit fields for pension/social security accounts", async () => {
+  it("hides annual contribution field for non-contribution account types", async () => {
     const user = userEvent.setup();
     vi.mocked(listAccounts).mockResolvedValue(axiosOk([]));
-    vi.mocked(createAccount).mockResolvedValue(axiosOk(sampleAccounts[1]));
 
     renderWithRouter(<AccountsPage />, {
       route: "/profiles/prof-1/accounts",
@@ -135,18 +131,10 @@ describe("AccountsPage", () => {
     await user.click(screen.getByText("Add Account"));
 
     const dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByRole("textbox", { name: /account name/i }), "My Pension");
-
     const typeSelect = within(dialog).getByRole("combobox", { name: /account type/i });
     await user.click(typeSelect);
-    await user.click(screen.getByText("Pension"));
+    await user.click(screen.getByText("Taxable Brokerage"));
 
-    expect(
-      within(dialog).getByRole("spinbutton", { name: /monthly benefit/i }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("spinbutton", { name: /benefit start age/i }),
-    ).toBeInTheDocument();
     expect(
       within(dialog).queryByRole("spinbutton", { name: /annual contribution/i }),
     ).not.toBeInTheDocument();

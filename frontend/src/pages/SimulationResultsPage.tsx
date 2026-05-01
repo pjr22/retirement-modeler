@@ -379,7 +379,7 @@ export default function SimulationResultsPage() {
                 const income = row.yearIncome;
 
                 // Withdrawals: deterministic uses the engine's value (income-first for
-                // FIXED_DOLLAR, savings-only for FIXED_PERCENTAGE). For non-deterministic
+                // CASHFLOW_TARGET, savings-only for PORTFOLIO_PERCENTAGE). For non-deterministic
                 // series we re-derive from the strategy + that series' balance, then cap at
                 // savings actually available (previous series balance + contributions). Income
                 // is paid directly to the user and never enters savings, so it's not part of
@@ -392,11 +392,11 @@ export default function SimulationResultsPage() {
                   withdrawals = 0;
                 } else {
                   let requested: number;
-                  if (scenario?.assumptions.withdrawalStrategy === "FIXED_PERCENTAGE") {
+                  if (scenario?.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE") {
                     requested = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
                   } else {
-                    // FIXED_DOLLAR: configured monthly target × 12 × inflation, less income
-                    // (cashflow-target semantics — savings only fill the gap).
+                    // CASHFLOW_TARGET: configured monthly target × 12 × inflation, less income
+                    // (savings only fill the gap).
                     const monthlyTarget = scenario?.assumptions.withdrawalMonthlyAmount ?? 0;
                     const annualTarget = monthlyTarget * 12 * row.inflationFactor;
                     requested = Math.max(0, annualTarget - income);
@@ -433,7 +433,7 @@ export default function SimulationResultsPage() {
               Contributions and Income are deterministic schedules — identical across all Monte
               Carlo trials.
               <br />
-              {scenario.assumptions.withdrawalStrategy === "FIXED_PERCENTAGE"
+              {scenario.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE"
                 ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals. Tax is (withdrawals + income) × flat tax rate."
                 : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero. Tax is (withdrawals + income) × flat tax rate."}
             </Typography>
@@ -474,13 +474,13 @@ export default function SimulationResultsPage() {
                 <TableRow>
                   <TableCell sx={{ fontWeight: 500 }}>Withdrawal Strategy</TableCell>
                   <TableCell>
-                    {scenario.assumptions.withdrawalStrategy === "FIXED_PERCENTAGE"
-                      ? `Fixed Percentage — ${formatPercent(
+                    {scenario.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE"
+                      ? `Portfolio Percentage — ${formatPercent(
                           scenario.assumptions.withdrawalPercentage ?? 0,
                         )} of balance per year`
-                      : `Fixed Dollar — ${formatCurrency(
+                      : `Cashflow Target — ${formatCurrency(
                           scenario.assumptions.withdrawalMonthlyAmount ?? 0,
-                        )}/month (inflation-adjusted)`}
+                        )}/month budget (inflation-adjusted, income-first)`}
                   </TableCell>
                 </TableRow>
                 <TableRow>

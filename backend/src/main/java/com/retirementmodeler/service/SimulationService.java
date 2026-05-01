@@ -2,6 +2,7 @@ package com.retirementmodeler.service;
 
 import com.retirementmodeler.exceptions.ResourceNotFoundException;
 import com.retirementmodeler.model.Account;
+import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.MonteCarloSummary;
 import com.retirementmodeler.model.Scenario;
 import com.retirementmodeler.model.SimulationAssumptions;
@@ -24,6 +25,7 @@ public class SimulationService {
   private final MonteCarloEngine monteCarloEngine;
   private final ScenarioService scenarioService;
   private final AccountService accountService;
+  private final IncomeSourceService incomeSourceService;
   private final UserProfileService userProfileService;
   private final SimulationRepository repository;
 
@@ -32,12 +34,14 @@ public class SimulationService {
       MonteCarloEngine monteCarloEngine,
       ScenarioService scenarioService,
       AccountService accountService,
+      IncomeSourceService incomeSourceService,
       UserProfileService userProfileService,
       SimulationRepository repository) {
     this.simulationEngine = simulationEngine;
     this.monteCarloEngine = monteCarloEngine;
     this.scenarioService = scenarioService;
     this.accountService = accountService;
+    this.incomeSourceService = incomeSourceService;
     this.userProfileService = userProfileService;
     this.repository = repository;
   }
@@ -53,12 +57,15 @@ public class SimulationService {
             .filter(a -> scenario.getAccountIds().contains(a.getId()))
             .collect(Collectors.toList());
 
+    List<IncomeSource> selectedIncomeSources =
+        incomeSourceService.getByScenarioId(scenarioId, ownerId);
+
     SimulationAssumptions assumptions = scenario.getAssumptions();
 
     List<YearlyProjection> deterministic =
         simulationEngine.projectDeterministic(
             selectedAccounts,
-            profile.getIncomeSources(),
+            selectedIncomeSources,
             assumptions,
             profile.getDateOfBirth(),
             profile.getPlannedRetirementDate(),
@@ -71,7 +78,7 @@ public class SimulationService {
     MonteCarloSummary monteCarlo =
         monteCarloEngine.run(
             selectedAccounts,
-            profile.getIncomeSources(),
+            selectedIncomeSources,
             assumptions,
             profile.getDateOfBirth(),
             profile.getPlannedRetirementDate(),

@@ -37,7 +37,72 @@ Completed as a single sweep before starting Phase 4:
 - [x] **Income-first FIXED_DOLLAR + pension/SS as direct income** — pension and Social Security `monthlyBenefit` is no longer deposited into the account's balance. Instead it's paid as direct income to the user (tracked in `yearIncome`). The FIXED_DOLLAR withdrawal strategy is now cashflow-target semantics: the configured monthly amount is what the user wants to live on; savings only fill the gap between target × inflation and incoming income. If income meets or exceeds the target, savings withdrawal is zero (option (a) — surplus is unused, not banked). FIXED_PERCENTAGE remains "withdraw N% of savings" with income paid on top. Knock-on benefits: pension/SS account balances stay at zero forever (no fake accumulation from proportional-withdrawal underdraining); the year-by-year `yearWithdrawals` reports actual savings drain, not pension passthrough; tax base double-counting is eliminated. The frontend table re-derives non-deterministic `withdrawals` from the strategy + that series' balance + (for FIXED_DOLLAR) inflation factor and income, and caps at savings-only available cash (`previousSeriesValue + contributions`).
 
 **Deferred (with explicit owners):**
-- [ ] **Income sources with start/end dates** — currently the `IncomeSource` model has only `endAge` and is only honored pre-retirement. We want it to support arbitrary start/end dates (LocalDate) and apply both pre- and post-retirement, so users can model rental income, part-time work, pensions/Social Security as cashflows independent of the `Account` model. Plan: add `startDate`/`endDate` to `IncomeSource`, drop `endAge`, update `SimulationEngine` to apply income sources whenever `currentMonth` falls within `[startDate, endDate]`. Should happen before Phase 4 (tax modeling needs accurate income streams), but is its own focused refactor.
+- (none — Phase 3.6 below absorbs the income-source refactor)
+
+---
+
+## Phase 3.6 — Unified income streams + Social Security earnings test 🚧 (in progress)
+
+**Goal:** Replace the dual "pension/SS as Account, salary as embedded IncomeSource" model with a single first-class `IncomeSource` entity (per scenario) that supports arbitrary start/end dates and types (employment, pension, Social Security, rental, etc.). Model the SSA earnings test (pre-FRA benefit reduction + actuarial recoup at FRA) on monthly boundaries. Rename withdrawal strategies for clarity.
+
+### Why now (before Phase 4)
+Phase 4's tax modeling needs accurate per-source income categorization (ordinary vs. SS-provisional vs. earned). The existing model conflates pension/SS with accounts and ignores any non-salary income post-retirement, so users can't model rental income or part-time work — and the empty "Income Sources" section on the profile detail page reflects this gap. Easier to fix the income model now than to layer tax logic on top of a broken one.
+
+### Domain model
+- [x] Promote `IncomeSource` to a top-level `@Entity` with its own table and PK (closes a Phase 6 cleanup item).
+- [x] New `IncomeType` enum: `EMPLOYMENT`, `SELF_EMPLOYMENT`, `PENSION`, `SOCIAL_SECURITY`, `RENTAL`, `OTHER`. EMPLOYMENT/SELF_EMPLOYMENT are "earned income" for SS earnings-test purposes.
+- [x] `IncomeSource` shape: `{id, scenarioId, name, type, monthlyAmount, startDate (nullable=from-now), endDate (nullable=until-death), inflationAdjusted}`. **Income sources belong to a scenario, not a profile** — varying start/end dates and amounts of pension / SS / part-time work is exactly what scenarios exist to compare ("what if SS at 62 vs 70?").
+- [x] Drop from `Account`: `monthlyBenefit`, `benefitStartAge`, `inflationAdjusted`. Pension/SS are no longer accounts.
+- [x] Drop from `AccountType` enum: `PENSION`, `SOCIAL_SECURITY`.
+- [x] Rename `WithdrawalStrategy` values: `FIXED_PERCENTAGE` → `PORTFOLIO_PERCENTAGE` (clear: "% of current savings"), `FIXED_DOLLAR` → `CASHFLOW_TARGET` (clear: "monthly budget filled by income first, then savings").
+
+### Migrations V005 + V006
+This is a dev environment, no production data — wipe affected rows rather than write data-conversion logic.
+- [x] V005: `accounts` — drop columns `monthly_benefit`, `benefit_start_age`, `inflation_adjusted`; delete rows with `account_type IN ('PENSION', 'SOCIAL_SECURITY')`.
+- [x] V005: `income_sources` — drop `annual_amount`, `end_age`; add `id` (PK), `type`, `monthly_amount`, `start_date`, `end_date`; truncate.
+- [x] V005: `scenarios` — rename strategy values (`FIXED_PERCENTAGE` → `PORTFOLIO_PERCENTAGE`, `FIXED_DOLLAR` → `CASHFLOW_TARGET`); truncate `simulation_results`.
+- [x] V006: `income_sources` — drop `profile_id`, add `scenario_id` with FK to `scenarios` (`ON DELETE CASCADE`); drop the (V005-created and now-unused) `scenario_income_sources` join table. Wipe `income_sources` again — they get re-entered per scenario.
+
+### API surface
+Mirror the scenario hierarchy — IncomeSources are owned by a scenario; ownership validated through scenario → profile → owner.
+- [x] `POST /api/scenarios/{scenarioId}/incomeSources` — create
+- [x] `GET /api/scenarios/{scenarioId}/incomeSources` — list for scenario
+- [x] `PUT /api/incomeSources/{id}` — update
+- [x] `DELETE /api/incomeSources/{id}` — delete
+
+### SimulationEngine changes
+
+**Income loop**: for each `IncomeSource` belonging to the scenario, if `startDate ≤ currentMonth ≤ endDate` (NULL bounds = open), add `monthlyAmount × (inflationAdjusted ? inflationFactor : 1)` to `monthIncome`. No more pre-retirement-only restriction. No more reading `Account.monthlyBenefit`.
+
+**SS earnings test** (modeled per-month, mirroring SSA mechanics):
+- Compute Full Retirement Age (FRA) from DOB via standard SSA lookup table (1960+ → 67).
+- Earnings-test threshold constants (2025): under-FRA = $23,400; year-of-FRA = $62,160. **Both inflated by simulation `inflationFactor` each year** (SSA wage-indexes them annually).
+- At each calendar-year start (or simulation start mid-year):
+  1. Project the year's earned income (sum over EMPLOYMENT + SELF_EMPLOYMENT sources active in that year, accounting for partial-year activity and per-month inflationFactor).
+  2. Project the year's SS benefit (sum over SOCIAL_SECURITY sources active in that year).
+  3. Determine year regime: under-FRA-all-year / year-of-FRA / at-or-after-FRA.
+  4. Compute annual reduction: under-FRA → `max(0, earned − threshold) × 0.5`; year-of-FRA → only earnings before FRA-month count, against year-of-FRA threshold, at $1/$3. At/after FRA → 0.
+  5. Cap reduction at year's projected SS. Set `ssWithholdRemaining = reduction`.
+- Each month, when paying SS, withhold `min(ssWithholdRemaining, thisMonthSS)`; subtract from `monthIncome`; decrement queue; accumulate `cumulativeWithheldPreFRA`.
+- At the FRA month, switch on a permanent monthly bonus = `cumulativeWithheldPreFRA / monthsRemainingToDeath`. (Actuarial recoup approximation.)
+
+**Withdrawal strategies**: rename in switch statements; semantics unchanged (CASHFLOW_TARGET still nets income; PORTFOLIO_PERCENTAGE still draws % of savings with income on top).
+
+### Frontend
+- [x] `ProfileDetailPage`: no Income Sources section (income is per-scenario).
+- [x] `AccountForm`: remove PENSION / SOCIAL_SECURITY from type dropdown; remove `monthlyBenefit`, `benefitStartAge`, `inflationAdjusted` fields.
+- [x] `ScenarioDetailPage`: full IncomeSource CRUD section (table + add/edit dialog with type / monthly amount / start & end dates / inflation flag), tied to the scenario. Strategy dropdown shows PORTFOLIO_PERCENTAGE / CASHFLOW_TARGET with helper text.
+- [x] `SimulationResultsPage`: updated all user-facing references to old strategy names.
+
+### Tests
+- [x] Backend: IncomeSourceController CRUD tests (auth isolation included).
+- [x] Backend: SimulationEngine tests covering — income source applies between dates, doesn't apply outside dates; pension as IncomeSource flows correctly; SS earnings test reduces benefit pre-FRA when earned income exceeds threshold; FRA recoup fully repays the withholding over remaining lifetime; post-FRA earned income produces no reduction; CASHFLOW_TARGET vs PORTFOLIO_PERCENTAGE behavior.
+- [x] Frontend: IncomeSource CRUD on ScenarioDetailPage; updated strategy dropdown labels.
+
+### Known simplifications (documented, not fixed)
+- SSA's actual recoup is a benefit recalc using delayed-retirement-credit-style tables; we approximate with `withheld / months_remaining_to_death`. Close enough for planning.
+- First partial year of simulation uses the annual rule from sim start date (we don't apply SSA's "first year of retirement" monthly-test rule, which is itself an exception users rarely hit).
+- Cloning a scenario (Phase 5) will need to deep-copy its income sources. Not implemented now.
 
 ---
 
@@ -127,7 +192,6 @@ Simulations:
 - JWT secret committed to source — needs to come from env / secret manager
 - `SecurityConfig` requires a `CorsConfigurationSource` bean that only `DevCorsConfig` (`@Profile("dev")`) provides — non-dev profiles would fail to start
 - JWT lives in localStorage (XSS-exposed) — switch to httpOnly cookie or in-memory + refresh
-- `income_sources` table has no primary key
 - `MonteCarloEngine.computeMedianYearsOfSurvival` would NPE on empty trial list
 
 ---
@@ -263,7 +327,6 @@ Tax-aware withdrawal ordering can change a 30-year retirement's lifetime tax bil
 - [ ] Move JWT from localStorage to httpOnly cookie (or in-memory + refresh)
 - [ ] Production-profile CORS bean (so app starts without `dev` profile)
 - [ ] Switch backend integration tests from H2 to Testcontainers (so V001+ migrations are exercised)
-- [ ] Add primary key to `income_sources` table (new migration)
 - [ ] Fix `MonteCarloEngine.computeMedianYearsOfSurvival` empty-list NPE
 - [ ] Database backups strategy
 - [ ] CI/CD pipeline (GitHub Actions)

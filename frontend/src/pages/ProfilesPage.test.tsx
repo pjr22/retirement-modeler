@@ -45,7 +45,6 @@ const sampleProfile = {
   plannedRetirementDate: "2055-01-01",
   lifeExpectancy: 90,
   filingStatus: "SINGLE" as const,
-  incomeSources: [],
 };
 
 describe("ProfilesPage", () => {
@@ -102,7 +101,6 @@ describe("ProfilesPage", () => {
         expect.objectContaining({
           name: "Bob",
           dateOfBirth: "1990-01-15",
-          incomeSources: [],
         }),
       );
     });

@@ -11,22 +11,13 @@ import {
   IconButton,
   Alert,
   Divider,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Checkbox,
-  FormControlLabel,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import AddIcon from "@mui/icons-material/Add";
-import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import SaveIcon from "@mui/icons-material/Save";
 import CancelIcon from "@mui/icons-material/Cancel";
 import { getUserProfile, updateUserProfile } from "../api";
-import type { UserProfile, FilingStatus, IncomeSource } from "../types";
+import type { UserProfile, FilingStatus } from "../types";
 import { formatLongDate } from "../utils";
 
 const FILING_STATUSES: { value: FilingStatus; label: string }[] = [
@@ -49,13 +40,6 @@ export default function ProfileDetailPage() {
     lifeExpectancy: 90,
     filingStatus: "SINGLE" as FilingStatus,
   });
-  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
-  const [newIncome, setNewIncome] = useState({
-    name: "",
-    annualAmount: 0,
-    endAge: null as number | null,
-    inflationAdjusted: true,
-  });
 
   const loadProfile = useCallback(async () => {
     if (!profileId) return;
@@ -69,7 +53,6 @@ export default function ProfileDetailPage() {
         lifeExpectancy: res.data.lifeExpectancy,
         filingStatus: res.data.filingStatus,
       });
-      setIncomeSources(res.data.incomeSources);
     } catch {
       setError("Failed to load profile");
     }
@@ -82,22 +65,12 @@ export default function ProfileDetailPage() {
   const handleSave = async () => {
     if (!profileId) return;
     try {
-      await updateUserProfile(profileId, { ...form, incomeSources });
+      await updateUserProfile(profileId, form);
       setEditing(false);
       loadProfile();
     } catch {
       setError("Failed to update profile");
     }
-  };
-
-  const addIncomeSource = () => {
-    if (!newIncome.name) return;
-    setIncomeSources([...incomeSources, { id: crypto.randomUUID(), ...newIncome }]);
-    setNewIncome({ name: "", annualAmount: 0, endAge: null, inflationAdjusted: true });
-  };
-
-  const removeIncomeSource = (id: string) => {
-    setIncomeSources(incomeSources.filter((is) => is.id !== id));
   };
 
   if (!profile) {
@@ -206,90 +179,6 @@ export default function ProfileDetailPage() {
             </TextField>
           </Grid>
         </Grid>
-      </Paper>
-
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Income Sources
-        </Typography>
-        {incomeSources.length > 0 && (
-          <Table size="small" sx={{ mb: 2 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell align="right">Annual Amount</TableCell>
-                <TableCell align="right">End Age</TableCell>
-                <TableCell align="center">Inflation-Adjusted</TableCell>
-                {editing && <TableCell align="right">Actions</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {incomeSources.map((is) => (
-                <TableRow key={is.id}>
-                  <TableCell>{is.name}</TableCell>
-                  <TableCell align="right">${is.annualAmount.toLocaleString()}</TableCell>
-                  <TableCell align="right">{is.endAge ?? "Ongoing"}</TableCell>
-                  <TableCell align="center">{is.inflationAdjusted ? "Yes" : "No"}</TableCell>
-                  {editing && (
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => removeIncomeSource(is.id)}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-        {editing && (
-          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-            <TextField
-              label="Income Name"
-              value={newIncome.name}
-              onChange={(e) => setNewIncome({ ...newIncome, name: e.target.value })}
-              size="small"
-            />
-            <TextField
-              label="Annual Amount"
-              type="number"
-              value={newIncome.annualAmount || ""}
-              onChange={(e) => setNewIncome({ ...newIncome, annualAmount: Number(e.target.value) })}
-              size="small"
-            />
-            <TextField
-              label="End Age"
-              type="number"
-              value={newIncome.endAge ?? ""}
-              onChange={(e) =>
-                setNewIncome({
-                  ...newIncome,
-                  endAge: e.target.value ? Number(e.target.value) : null,
-                })
-              }
-              size="small"
-              placeholder="Ongoing"
-            />
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={newIncome.inflationAdjusted}
-                  onChange={(e) =>
-                    setNewIncome({ ...newIncome, inflationAdjusted: e.target.checked })
-                  }
-                />
-              }
-              label="Inflation-adjusted"
-            />
-            <Button startIcon={<AddIcon />} onClick={addIncomeSource} disabled={!newIncome.name}>
-              Add
-            </Button>
-          </Box>
-        )}
       </Paper>
 
       <Divider sx={{ my: 3 }} />

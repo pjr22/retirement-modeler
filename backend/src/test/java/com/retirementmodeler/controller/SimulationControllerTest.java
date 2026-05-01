@@ -34,8 +34,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
                           "dateOfBirth": "1990-01-01",
                           "plannedRetirementDate": "2055-01-01",
                           "lifeExpectancy": 90,
-                          "filingStatus": "SINGLE",
-                          "incomeSources": []
+                          "filingStatus": "SINGLE"
                         }
                         """))
             .andExpect(status().isCreated())
@@ -53,9 +52,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
                           "name": "Test 401k",
                           "accountType": "TRADITIONAL_401K",
                           "balance": 500000,
-                          "annualContribution": 23000,
-                          "monthlyBenefit": null,
-                          "benefitStartAge": null
+                          "annualContribution": 23000
                         }
                         """))
             .andExpect(status().isCreated())
@@ -169,12 +166,13 @@ class SimulationControllerTest extends BaseIntegrationTest {
                               "name": "Test Scenario",
                               "description": null,
                               "accountIds": ["%s"],
+                              "incomeSourceIds": [],
                               "assumptions": {
                                 "expectedRateOfReturn": 0.07,
                                 "inflationRate": 0.03,
-                                "withdrawalStrategy": "FIXED_PERCENTAGE",
+                                "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
                                 "withdrawalPercentage": 0.04,
-                                "withdrawalFixedAmount": null,
+                                "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.15,
                                 "monteCarloTrials": %d,
                                 "flatTaxRate": 0.22

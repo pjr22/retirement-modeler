@@ -28,17 +28,6 @@ public class Account {
 
   private BigDecimal annualContribution;
 
-  private BigDecimal monthlyBenefit;
-
-  private Integer benefitStartAge;
-
-  /**
-   * For benefit-paying accounts (PENSION, SOCIAL_SECURITY), whether the {@code monthlyBenefit}
-   * grows with inflation each year. Social Security typically does (the COLA); most private
-   * pensions don't. Ignored for non-benefit account types.
-   */
-  private boolean inflationAdjusted;
-
   protected Account() {}
 
   public UUID getId() {
@@ -87,29 +76,5 @@ public class Account {
 
   public void setAnnualContribution(BigDecimal annualContribution) {
     this.annualContribution = annualContribution;
-  }
-
-  public BigDecimal getMonthlyBenefit() {
-    return monthlyBenefit;
-  }
-
-  public void setMonthlyBenefit(BigDecimal monthlyBenefit) {
-    this.monthlyBenefit = monthlyBenefit;
-  }
-
-  public Integer getBenefitStartAge() {
-    return benefitStartAge;
-  }
-
-  public void setBenefitStartAge(Integer benefitStartAge) {
-    this.benefitStartAge = benefitStartAge;
-  }
-
-  public boolean isInflationAdjusted() {
-    return inflationAdjusted;
-  }
-
-  public void setInflationAdjusted(boolean inflationAdjusted) {
-    this.inflationAdjusted = inflationAdjusted;
   }
 }
