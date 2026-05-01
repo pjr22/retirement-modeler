@@ -17,7 +17,7 @@ public class Account {
   @Id @GeneratedValue private UUID id;
 
   @Column(name = "user_profile_id")
-  private UUID userId;
+  private UUID userProfileId;
 
   private String name;
 
@@ -42,12 +42,12 @@ public class Account {
     this.id = id;
   }
 
-  public UUID getUserId() {
-    return userId;
+  public UUID getUserProfileId() {
+    return userProfileId;
   }
 
-  public void setUserId(UUID userId) {
-    this.userId = userId;
+  public void setUserProfileId(UUID userProfileId) {
+    this.userProfileId = userProfileId;
   }
 
   public String getName() {

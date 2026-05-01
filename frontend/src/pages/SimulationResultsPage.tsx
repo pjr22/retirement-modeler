@@ -169,7 +169,7 @@ export default function SimulationResultsPage() {
               tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
               label={{ value: "Balance", angle: -90, position: "insideLeft" }}
             />
-            <Tooltip formatter={(value: number) => formatCurrency(value)} />
+            <Tooltip formatter={(value) => formatCurrency(Number(value))} />
             <Legend />
             <Area type="monotone" dataKey="10th %" stroke="none" fill="#ffcdd2" fillOpacity={0.3} />
             <Area type="monotone" dataKey="90th %" stroke="none" fill="#c8e6c9" fillOpacity={0.3} />

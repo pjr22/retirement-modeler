@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
 import HealthStatus from "./HealthStatus";
 import api from "../api";
 
@@ -47,7 +47,7 @@ describe("HealthStatus", () => {
   });
 
   it("shows connected when health check succeeds", async () => {
-    vi.mocked(api.get).mockResolvedValue({ data: { status: "UP", timestamp: "2025-01-01" } });
+    vi.mocked(api.get).mockResolvedValue(axiosOk({ status: "UP", timestamp: "2025-01-01" }));
     renderWithRouter(<HealthStatus />);
     await waitFor(() => {
       expect(screen.getByText("Backend connected")).toBeInTheDocument();

@@ -65,7 +65,7 @@ export default function RegisterPage() {
             Register
           </Button>
         </form>
-        <Typography variant="body2" textAlign="center">
+        <Typography variant="body2" sx={{ textAlign: "center" }}>
           Already have an account?{" "}
           <Link to="/login" style={{ textDecoration: "none" }}>
             Login

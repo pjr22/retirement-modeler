@@ -27,18 +27,19 @@ public class AccountController {
     this.service = service;
   }
 
-  @PostMapping("/users/{userId}/accounts")
+  @PostMapping("/users/{profileId}/accounts")
   @ResponseStatus(HttpStatus.CREATED)
   public Account create(
-      @PathVariable UUID userId,
+      @PathVariable UUID profileId,
       @RequestBody Account account,
       @AuthenticationPrincipal CustomUserDetails userDetails) {
-    return service.create(userId, userDetails.getId(), account);
+    return service.create(profileId, userDetails.getId(), account);
   }
 
-  @GetMapping("/users/{userId}/accounts")
-  public List<Account> getByUserId(@PathVariable UUID userId) {
-    return service.getByUserId(userId);
+  @GetMapping("/users/{profileId}/accounts")
+  public List<Account> getByProfileId(
+      @PathVariable UUID profileId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getByProfileId(profileId, userDetails.getId());
   }
 
   @PutMapping("/accounts/{id}")

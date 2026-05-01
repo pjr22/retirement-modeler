@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
+
 import AccountsPage from "./AccountsPage";
 
 vi.mock("../api", () => ({
@@ -40,7 +41,7 @@ import { listAccounts, createAccount, deleteAccount } from "../api";
 const sampleAccounts = [
   {
     id: "acc-1",
-    userId: "prof-1",
+    userProfileId: "prof-1",
     name: "My 401k",
     accountType: "TRADITIONAL_401K" as const,
     balance: 50000,
@@ -50,7 +51,7 @@ const sampleAccounts = [
   },
   {
     id: "acc-2",
-    userId: "prof-1",
+    userProfileId: "prof-1",
     name: "Company Pension",
     accountType: "PENSION" as const,
     balance: 0,
@@ -66,7 +67,7 @@ describe("AccountsPage", () => {
   });
 
   it("lists accounts with type-specific details", async () => {
-    vi.mocked(listAccounts).mockResolvedValue({ data: sampleAccounts });
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
     renderWithRouter(<AccountsPage />, {
       route: "/profiles/prof-1/accounts",
       path: "/profiles/:profileId/accounts",
@@ -82,8 +83,8 @@ describe("AccountsPage", () => {
 
   it("shows contribution fields for contribution-type accounts", async () => {
     const user = userEvent.setup();
-    vi.mocked(listAccounts).mockResolvedValue({ data: [] });
-    vi.mocked(createAccount).mockResolvedValue({ data: sampleAccounts[0] });
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk([]));
+    vi.mocked(createAccount).mockResolvedValue(axiosOk(sampleAccounts[0]));
 
     renderWithRouter(<AccountsPage />, {
       route: "/profiles/prof-1/accounts",
@@ -117,8 +118,8 @@ describe("AccountsPage", () => {
 
   it("shows benefit fields for pension/social security accounts", async () => {
     const user = userEvent.setup();
-    vi.mocked(listAccounts).mockResolvedValue({ data: [] });
-    vi.mocked(createAccount).mockResolvedValue({ data: sampleAccounts[1] });
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk([]));
+    vi.mocked(createAccount).mockResolvedValue(axiosOk(sampleAccounts[1]));
 
     renderWithRouter(<AccountsPage />, {
       route: "/profiles/prof-1/accounts",
@@ -151,8 +152,8 @@ describe("AccountsPage", () => {
 
   it("deletes an account", async () => {
     const user = userEvent.setup();
-    vi.mocked(listAccounts).mockResolvedValue({ data: [sampleAccounts[0]] });
-    vi.mocked(deleteAccount).mockResolvedValue({});
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk([sampleAccounts[0]]));
+    vi.mocked(deleteAccount).mockResolvedValue(axiosOk(undefined));
 
     renderWithRouter(<AccountsPage />, {
       route: "/profiles/prof-1/accounts",

@@ -20,7 +20,7 @@ public class SimulationResult {
   private UUID scenarioId;
 
   @Column(name = "user_profile_id")
-  private UUID userId;
+  private UUID userProfileId;
 
   private Instant createdAt;
 
@@ -35,13 +35,13 @@ public class SimulationResult {
   public SimulationResult(
       UUID id,
       UUID scenarioId,
-      UUID userId,
+      UUID userProfileId,
       Instant createdAt,
       List<YearlyProjection> deterministicProjection,
       MonteCarloSummary monteCarloSummary) {
     this.id = id;
     this.scenarioId = scenarioId;
-    this.userId = userId;
+    this.userProfileId = userProfileId;
     this.createdAt = createdAt;
     this.deterministicProjection = deterministicProjection;
     this.monteCarloSummary = monteCarloSummary;
@@ -63,12 +63,12 @@ public class SimulationResult {
     this.scenarioId = scenarioId;
   }
 
-  public UUID getUserId() {
-    return userId;
+  public UUID getUserProfileId() {
+    return userProfileId;
   }
 
-  public void setUserId(UUID userId) {
-    this.userId = userId;
+  public void setUserProfileId(UUID userProfileId) {
+    this.userProfileId = userProfileId;
   }
 
   public Instant getCreatedAt() {

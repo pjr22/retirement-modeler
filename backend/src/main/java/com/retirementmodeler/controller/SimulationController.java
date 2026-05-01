@@ -37,9 +37,9 @@ public class SimulationController {
     return service.getById(id, userDetails.getId());
   }
 
-  @GetMapping("/users/{userId}/simulations")
-  public List<SimulationResult> getByUserId(
-      @PathVariable UUID userId, @AuthenticationPrincipal CustomUserDetails userDetails) {
-    return service.getByUserId(userId, userDetails.getId());
+  @GetMapping("/users/{profileId}/simulations")
+  public List<SimulationResult> getByProfileId(
+      @PathVariable UUID profileId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getByProfileId(profileId, userDetails.getId());
   }
 }

@@ -22,24 +22,27 @@ public class ScenarioService {
 
   public Scenario create(UUID profileId, UUID ownerId, Scenario scenario) {
     validateProfileOwnership(profileId, ownerId);
-    scenario.setUserId(profileId);
+    scenario.setUserProfileId(profileId);
     if (scenario.getAccountIds() == null) {
       scenario.setAccountIds(List.of());
     }
     return repository.save(scenario);
   }
 
-  public Scenario getById(UUID id) {
-    return repository.findById(id).orElseThrow(() -> notFound(id));
+  public Scenario getById(UUID id, UUID ownerId) {
+    Scenario scenario = repository.findById(id).orElseThrow(() -> notFound(id));
+    validateProfileOwnership(scenario.getUserProfileId(), ownerId);
+    return scenario;
   }
 
-  public List<Scenario> getByUserId(UUID profileId) {
-    return repository.findByUserId(profileId);
+  public List<Scenario> getByProfileId(UUID profileId, UUID ownerId) {
+    validateProfileOwnership(profileId, ownerId);
+    return repository.findByUserProfileId(profileId);
   }
 
   public Scenario update(UUID id, UUID ownerId, Scenario scenario) {
     Scenario existing = repository.findById(id).orElseThrow(() -> notFound(id));
-    validateProfileOwnership(existing.getUserId(), ownerId);
+    validateProfileOwnership(existing.getUserProfileId(), ownerId);
     existing.setName(scenario.getName());
     existing.setDescription(scenario.getDescription());
     existing.setAccountIds(scenario.getAccountIds() != null ? scenario.getAccountIds() : List.of());
@@ -49,7 +52,7 @@ public class ScenarioService {
 
   public void delete(UUID id, UUID ownerId) {
     Scenario existing = repository.findById(id).orElseThrow(() -> notFound(id));
-    validateProfileOwnership(existing.getUserId(), ownerId);
+    validateProfileOwnership(existing.getUserProfileId(), ownerId);
     repository.deleteById(id);
   }
 

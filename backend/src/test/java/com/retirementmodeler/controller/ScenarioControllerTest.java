@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 class ScenarioControllerTest extends BaseIntegrationTest {
 
-  private String userId;
+  private String profileId;
 
   @BeforeEach
   void createUser() throws Exception {
@@ -39,7 +39,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                         """))
             .andExpect(status().isCreated())
             .andReturn();
-    userId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+    profileId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
   }
 
   @Nested
@@ -49,7 +49,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
     void createsScenarioAndReturns201() throws Exception {
       mockMvc
           .perform(
-              post("/api/users/{userId}/scenarios", userId)
+              post("/api/users/{profileId}/scenarios", profileId)
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(
                       """
@@ -71,7 +71,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                             """))
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.id").exists())
-          .andExpect(jsonPath("$.userId").value(userId))
+          .andExpect(jsonPath("$.userProfileId").value(profileId))
           .andExpect(jsonPath("$.name").value("Conservative"))
           .andExpect(jsonPath("$.description").value("Low risk approach"))
           .andExpect(jsonPath("$.assumptions.expectedRateOfReturn").value(0.05))
@@ -84,7 +84,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
 
       mockMvc
           .perform(
-              post("/api/users/{userId}/scenarios", userId)
+              post("/api/users/{profileId}/scenarios", profileId)
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(
                       String.format(
@@ -133,15 +133,15 @@ class ScenarioControllerTest extends BaseIntegrationTest {
   }
 
   @Nested
-  class GetByUserId {
+  class GetByProfileId {
 
     @Test
-    void returnsScenariosForUser() throws Exception {
+    void returnsScenariosForProfile() throws Exception {
       createScenario("Scenario 1");
       createScenario("Scenario 2");
 
       mockMvc
-          .perform(get("/api/users/{userId}/scenarios", userId))
+          .perform(get("/api/users/{profileId}/scenarios", profileId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(2)));
     }
@@ -178,7 +178,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                             """))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.id").value(scenarioId))
-          .andExpect(jsonPath("$.userId").value(userId))
+          .andExpect(jsonPath("$.userProfileId").value(profileId))
           .andExpect(jsonPath("$.name").value("New Name"))
           .andExpect(jsonPath("$.assumptions.expectedRateOfReturn").value(0.08));
     }
@@ -228,7 +228,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
     MvcResult result =
         mockMvc
             .perform(
-                post("/api/users/{userId}/accounts", userId)
+                post("/api/users/{profileId}/accounts", profileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
@@ -250,7 +250,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
     MvcResult result =
         mockMvc
             .perform(
-                post("/api/users/{userId}/scenarios", userId)
+                post("/api/users/{profileId}/scenarios", profileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         String.format(

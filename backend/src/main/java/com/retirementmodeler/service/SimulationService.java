@@ -43,10 +43,11 @@ public class SimulationService {
   }
 
   public SimulationResult runSimulation(UUID scenarioId, UUID ownerId) {
-    Scenario scenario = scenarioService.getById(scenarioId);
-    UserProfile profile = userProfileService.getByIdAndOwnerId(scenario.getUserId(), ownerId);
+    Scenario scenario = scenarioService.getById(scenarioId, ownerId);
+    UserProfile profile =
+        userProfileService.getByIdAndOwnerId(scenario.getUserProfileId(), ownerId);
 
-    List<Account> allAccounts = accountService.getByUserId(scenario.getUserId());
+    List<Account> allAccounts = accountService.getByProfileId(scenario.getUserProfileId(), ownerId);
     List<Account> selectedAccounts =
         allAccounts.stream()
             .filter(a -> scenario.getAccountIds().contains(a.getId()))
@@ -79,20 +80,25 @@ public class SimulationService {
 
     SimulationResult result =
         new SimulationResult(
-            null, scenarioId, scenario.getUserId(), Instant.now(), deterministic, monteCarlo);
+            null,
+            scenarioId,
+            scenario.getUserProfileId(),
+            Instant.now(),
+            deterministic,
+            monteCarlo);
 
     return repository.save(result);
   }
 
   public SimulationResult getById(UUID id, UUID ownerId) {
     SimulationResult result = repository.findById(id).orElseThrow(() -> notFound(id));
-    userProfileService.getByIdAndOwnerId(result.getUserId(), ownerId);
+    userProfileService.getByIdAndOwnerId(result.getUserProfileId(), ownerId);
     return result;
   }
 
-  public List<SimulationResult> getByUserId(UUID profileId, UUID ownerId) {
+  public List<SimulationResult> getByProfileId(UUID profileId, UUID ownerId) {
     userProfileService.getByIdAndOwnerId(profileId, ownerId);
-    return repository.findByUserIdOrderByCreatedAtDesc(profileId);
+    return repository.findByUserProfileIdOrderByCreatedAtDesc(profileId);
   }
 
   private ResourceNotFoundException notFound(UUID id) {

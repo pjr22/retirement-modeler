@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ScenarioRepository extends JpaRepository<Scenario, UUID> {
-  List<Scenario> findByUserId(UUID userId);
+  List<Scenario> findByUserProfileId(UUID userProfileId);
 
-  Optional<Scenario> findByIdAndUserId(UUID id, UUID userId);
+  Optional<Scenario> findByIdAndUserProfileId(UUID id, UUID userProfileId);
 }

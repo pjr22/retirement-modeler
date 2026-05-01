@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
+
 import SimulationResultsPage from "./SimulationResultsPage";
 
 vi.mock("../api", () => ({
@@ -39,14 +40,14 @@ import { getSimulation, getScenario } from "../api";
 
 const sampleScenario = {
   id: "scen-1",
-  userId: "prof-1",
+  userProfileId: "prof-1",
   name: "Test Scenario",
   description: null,
   accountIds: ["acc-1"],
   assumptions: {
     expectedRateOfReturn: 0.07,
     inflationRate: 0.03,
-    withdrawalStrategy: "FIXED_PERCENTAGE",
+    withdrawalStrategy: "FIXED_PERCENTAGE" as const,
     withdrawalPercentage: 0.04,
     withdrawalFixedAmount: null,
     standardDeviation: 0.15,
@@ -58,7 +59,7 @@ const sampleScenario = {
 const sampleSimulation = {
   id: "sim-1",
   scenarioId: "scen-1",
-  userId: "prof-1",
+  userProfileId: "prof-1",
   createdAt: "2026-01-01T00:00:00Z",
   deterministicProjection: [
     {
@@ -110,8 +111,8 @@ describe("SimulationResultsPage", () => {
   });
 
   it("loads and displays simulation results", async () => {
-    vi.mocked(getSimulation).mockResolvedValue({ data: sampleSimulation });
-    vi.mocked(getScenario).mockResolvedValue({ data: sampleScenario });
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
 
     renderWithRouter(<SimulationResultsPage />, {
       route: "/simulations/sim-1",
@@ -144,8 +145,8 @@ describe("SimulationResultsPage", () => {
 
   it("toggles the year-by-year details table", async () => {
     const user = userEvent.setup();
-    vi.mocked(getSimulation).mockResolvedValue({ data: sampleSimulation });
-    vi.mocked(getScenario).mockResolvedValue({ data: sampleScenario });
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
 
     renderWithRouter(<SimulationResultsPage />, {
       route: "/simulations/sim-1",

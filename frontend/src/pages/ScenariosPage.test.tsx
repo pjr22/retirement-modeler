@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
 import ScenariosPage from "./ScenariosPage";
 
 vi.mock("../api", () => ({
@@ -42,7 +42,7 @@ describe("ScenariosPage", () => {
   });
 
   it("shows empty state when no scenarios exist", async () => {
-    vi.mocked(listScenarios).mockResolvedValue({ data: [] });
+    vi.mocked(listScenarios).mockResolvedValue(axiosOk([]));
     renderWithRouter(<ScenariosPage />, {
       route: "/profiles/prof-1/scenarios",
       path: "/profiles/:profileId/scenarios",
@@ -56,11 +56,11 @@ describe("ScenariosPage", () => {
   });
 
   it("lists scenarios with account count", async () => {
-    vi.mocked(listScenarios).mockResolvedValue({
-      data: [
+    vi.mocked(listScenarios).mockResolvedValue(
+      axiosOk([
         {
           id: "scen-1",
-          userId: "prof-1",
+          userProfileId: "prof-1",
           name: "Conservative",
           description: "Low risk",
           accountIds: ["acc-1", "acc-2"],
@@ -75,8 +75,8 @@ describe("ScenariosPage", () => {
             flatTaxRate: 0.22,
           },
         },
-      ],
-    });
+      ]),
+    );
     renderWithRouter(<ScenariosPage />, {
       route: "/profiles/prof-1/scenarios",
       path: "/profiles/:profileId/scenarios",

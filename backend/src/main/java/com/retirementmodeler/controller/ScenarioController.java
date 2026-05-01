@@ -27,23 +27,25 @@ public class ScenarioController {
     this.service = service;
   }
 
-  @PostMapping("/users/{userId}/scenarios")
+  @PostMapping("/users/{profileId}/scenarios")
   @ResponseStatus(HttpStatus.CREATED)
   public Scenario create(
-      @PathVariable UUID userId,
+      @PathVariable UUID profileId,
       @RequestBody Scenario scenario,
       @AuthenticationPrincipal CustomUserDetails userDetails) {
-    return service.create(userId, userDetails.getId(), scenario);
+    return service.create(profileId, userDetails.getId(), scenario);
   }
 
-  @GetMapping("/users/{userId}/scenarios")
-  public List<Scenario> getByUserId(@PathVariable UUID userId) {
-    return service.getByUserId(userId);
+  @GetMapping("/users/{profileId}/scenarios")
+  public List<Scenario> getByProfileId(
+      @PathVariable UUID profileId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getByProfileId(profileId, userDetails.getId());
   }
 
   @GetMapping("/scenarios/{id}")
-  public Scenario getById(@PathVariable UUID id) {
-    return service.getById(id);
+  public Scenario getById(
+      @PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.getById(id, userDetails.getId());
   }
 
   @PutMapping("/scenarios/{id}")

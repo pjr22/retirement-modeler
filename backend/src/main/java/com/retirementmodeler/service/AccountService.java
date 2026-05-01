@@ -21,7 +21,7 @@ public class AccountService {
 
   public Account create(UUID profileId, UUID ownerId, Account account) {
     validateProfileOwnership(profileId, ownerId);
-    account.setUserId(profileId);
+    account.setUserProfileId(profileId);
     return repository.save(account);
   }
 
@@ -29,13 +29,14 @@ public class AccountService {
     return repository.findById(id).orElseThrow(() -> notFound(id));
   }
 
-  public List<Account> getByUserId(UUID profileId) {
-    return repository.findByUserId(profileId);
+  public List<Account> getByProfileId(UUID profileId, UUID ownerId) {
+    validateProfileOwnership(profileId, ownerId);
+    return repository.findByUserProfileId(profileId);
   }
 
   public Account update(UUID id, UUID ownerId, Account account) {
     Account existing = repository.findById(id).orElseThrow(() -> notFound(id));
-    validateProfileOwnership(existing.getUserId(), ownerId);
+    validateProfileOwnership(existing.getUserProfileId(), ownerId);
     existing.setName(account.getName());
     existing.setAccountType(account.getAccountType());
     existing.setBalance(account.getBalance());
@@ -47,7 +48,7 @@ public class AccountService {
 
   public void delete(UUID id, UUID ownerId) {
     Account existing = repository.findById(id).orElseThrow(() -> notFound(id));
-    validateProfileOwnership(existing.getUserId(), ownerId);
+    validateProfileOwnership(existing.getUserProfileId(), ownerId);
     repository.deleteById(id);
   }
 

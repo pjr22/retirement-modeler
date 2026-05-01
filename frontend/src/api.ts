@@ -62,26 +62,29 @@ export const updateUserProfile = (id: string, profile: Omit<UserProfile, "id">) 
   api.put<UserProfile>(`/api/users/${id}`, profile);
 export const deleteUserProfile = (id: string) => api.delete(`/api/users/${id}`);
 
-export const listAccounts = (userId: string) => api.get<Account[]>(`/api/users/${userId}/accounts`);
-export const createAccount = (userId: string, account: Omit<Account, "id" | "userId">) =>
-  api.post<Account>(`/api/users/${userId}/accounts`, account);
-export const updateAccount = (id: string, account: Omit<Account, "id" | "userId">) =>
+export const listAccounts = (profileId: string) =>
+  api.get<Account[]>(`/api/users/${profileId}/accounts`);
+export const createAccount = (profileId: string, account: Omit<Account, "id" | "userProfileId">) =>
+  api.post<Account>(`/api/users/${profileId}/accounts`, account);
+export const updateAccount = (id: string, account: Omit<Account, "id" | "userProfileId">) =>
   api.put<Account>(`/api/accounts/${id}`, account);
 export const deleteAccount = (id: string) => api.delete(`/api/accounts/${id}`);
 
-export const listScenarios = (userId: string) =>
-  api.get<Scenario[]>(`/api/users/${userId}/scenarios`);
+export const listScenarios = (profileId: string) =>
+  api.get<Scenario[]>(`/api/users/${profileId}/scenarios`);
 export const getScenario = (id: string) => api.get<Scenario>(`/api/scenarios/${id}`);
-export const createScenario = (userId: string, scenario: Omit<Scenario, "id" | "userId">) =>
-  api.post<Scenario>(`/api/users/${userId}/scenarios`, scenario);
-export const updateScenario = (id: string, scenario: Omit<Scenario, "id" | "userId">) =>
+export const createScenario = (
+  profileId: string,
+  scenario: Omit<Scenario, "id" | "userProfileId">,
+) => api.post<Scenario>(`/api/users/${profileId}/scenarios`, scenario);
+export const updateScenario = (id: string, scenario: Omit<Scenario, "id" | "userProfileId">) =>
   api.put<Scenario>(`/api/scenarios/${id}`, scenario);
 export const deleteScenario = (id: string) => api.delete(`/api/scenarios/${id}`);
 
 export const runSimulation = (scenarioId: string) =>
   api.post<SimulationResult>(`/api/scenarios/${scenarioId}/simulate`);
 export const getSimulation = (id: string) => api.get<SimulationResult>(`/api/simulations/${id}`);
-export const listSimulations = (userId: string) =>
-  api.get<SimulationResult[]>(`/api/users/${userId}/simulations`);
+export const listSimulations = (profileId: string) =>
+  api.get<SimulationResult[]>(`/api/users/${profileId}/simulations`);
 
 export default api;

@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 class SimulationControllerTest extends BaseIntegrationTest {
 
-  private String userId;
+  private String profileId;
   private String accountId;
 
   @BeforeEach
@@ -40,12 +40,12 @@ class SimulationControllerTest extends BaseIntegrationTest {
                         """))
             .andExpect(status().isCreated())
             .andReturn();
-    userId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+    profileId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
 
     MvcResult accResult =
         mockMvc
             .perform(
-                post("/api/users/{userId}/accounts", userId)
+                post("/api/users/{profileId}/accounts", profileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         """
@@ -76,7 +76,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.id").exists())
           .andExpect(jsonPath("$.scenarioId").value(scenarioId))
-          .andExpect(jsonPath("$.userId").value(userId))
+          .andExpect(jsonPath("$.userProfileId").value(profileId))
           .andExpect(jsonPath("$.createdAt").exists())
           .andExpect(jsonPath("$.deterministicProjection").isArray())
           .andExpect(jsonPath("$.deterministicProjection", hasSize(greaterThanOrEqualTo(1))))
@@ -142,7 +142,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
           .andExpect(status().isCreated());
 
       mockMvc
-          .perform(get("/api/users/{userId}/simulations", userId))
+          .perform(get("/api/users/{profileId}/simulations", profileId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(2)));
     }
@@ -150,7 +150,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
     @Test
     void returnsEmptyListWhenNoSimulations() throws Exception {
       mockMvc
-          .perform(get("/api/users/{userId}/simulations", userId))
+          .perform(get("/api/users/{profileId}/simulations", profileId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(0)));
     }
@@ -160,7 +160,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
     MvcResult result =
         mockMvc
             .perform(
-                post("/api/users/{userId}/scenarios", userId)
+                post("/api/users/{profileId}/scenarios", profileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         String.format(

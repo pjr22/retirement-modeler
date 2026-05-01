@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
+
 import ProfileDetailPage from "./ProfileDetailPage";
 
 vi.mock("../api", () => ({
@@ -53,7 +54,7 @@ describe("ProfileDetailPage", () => {
   });
 
   it("loads and displays the profile", async () => {
-    vi.mocked(getUserProfile).mockResolvedValue({ data: sampleProfile });
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
     renderWithRouter(<ProfileDetailPage />, {
       route: "/profiles/prof-1",
       path: "/profiles/:profileId",
@@ -66,7 +67,7 @@ describe("ProfileDetailPage", () => {
   });
 
   it("shows income sources in a table", async () => {
-    vi.mocked(getUserProfile).mockResolvedValue({ data: sampleProfile });
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
     renderWithRouter(<ProfileDetailPage />, {
       route: "/profiles/prof-1",
       path: "/profiles/:profileId",
@@ -80,10 +81,10 @@ describe("ProfileDetailPage", () => {
 
   it("enters edit mode and saves changes", async () => {
     const user = userEvent.setup();
-    vi.mocked(getUserProfile).mockResolvedValue({ data: sampleProfile });
-    vi.mocked(updateUserProfile).mockResolvedValue({
-      data: { ...sampleProfile, name: "Alice Updated" },
-    });
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(updateUserProfile).mockResolvedValue(
+      axiosOk({ ...sampleProfile, name: "Alice Updated" }),
+    );
 
     renderWithRouter(<ProfileDetailPage />, {
       route: "/profiles/prof-1",

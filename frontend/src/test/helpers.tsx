@@ -3,6 +3,17 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { ThemeProvider, createTheme } from "@mui/material";
 import { AuthProvider } from "../components/AuthContext";
 import type { ReactElement } from "react";
+import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
+
+export function axiosOk<T>(data: T): AxiosResponse<T> {
+  return {
+    data,
+    status: 200,
+    statusText: "OK",
+    headers: {},
+    config: {} as InternalAxiosRequestConfig,
+  };
+}
 
 const theme = createTheme({
   palette: {

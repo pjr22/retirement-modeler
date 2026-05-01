@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AccountRepository extends JpaRepository<Account, UUID> {
-  List<Account> findByUserId(UUID userId);
+  List<Account> findByUserProfileId(UUID userProfileId);
 
-  Optional<Account> findByIdAndUserId(UUID id, UUID userId);
+  Optional<Account> findByIdAndUserProfileId(UUID id, UUID userProfileId);
 }

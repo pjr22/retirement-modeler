@@ -7,7 +7,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface SimulationRepository extends JpaRepository<SimulationResult, UUID> {
-  Optional<SimulationResult> findByIdAndUserId(UUID id, UUID userId);
+  Optional<SimulationResult> findByIdAndUserProfileId(UUID id, UUID userProfileId);
 
-  List<SimulationResult> findByUserIdOrderByCreatedAtDesc(UUID userId);
+  List<SimulationResult> findByUserProfileIdOrderByCreatedAtDesc(UUID userProfileId);
 }

@@ -36,7 +36,7 @@ export interface UserProfile {
 
 export interface Account {
   id: string;
-  userId: string;
+  userProfileId: string;
   name: string;
   accountType: AccountType;
   balance: number;
@@ -58,7 +58,7 @@ export interface SimulationAssumptions {
 
 export interface Scenario {
   id: string;
-  userId: string;
+  userProfileId: string;
   name: string;
   description: string | null;
   accountIds: string[];
@@ -95,7 +95,7 @@ export interface MonteCarloSummary {
 export interface SimulationResult {
   id: string;
   scenarioId: string;
-  userId: string;
+  userProfileId: string;
   createdAt: string;
   deterministicProjection: YearlyProjection[];
   monteCarloSummary: MonteCarloSummary;

@@ -64,7 +64,7 @@ export default function ScenarioDetailPage() {
         accountIds: s.accountIds,
         assumptions: s.assumptions,
       });
-      const accRes = await listAccounts(s.userId);
+      const accRes = await listAccounts(s.userProfileId);
       setAccounts(accRes.data);
     } catch {
       setError("Failed to load scenario");

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { renderWithRouter } from "../test/helpers";
+import { renderWithRouter, axiosOk } from "../test/helpers";
+
 import ProfilesPage from "./ProfilesPage";
 
 vi.mock("../api", () => ({
@@ -50,7 +51,7 @@ const sampleProfile = {
 describe("ProfilesPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(listUserProfiles).mockResolvedValue({ data: [] });
+    vi.mocked(listUserProfiles).mockResolvedValue(axiosOk([]));
   });
 
   it("shows empty state when no profiles exist", async () => {
@@ -61,7 +62,7 @@ describe("ProfilesPage", () => {
   });
 
   it("lists profiles from the API", async () => {
-    vi.mocked(listUserProfiles).mockResolvedValue({ data: [sampleProfile] });
+    vi.mocked(listUserProfiles).mockResolvedValue(axiosOk([sampleProfile]));
     renderWithRouter(<ProfilesPage />);
     await waitFor(() => {
       expect(screen.getByText("Alice")).toBeInTheDocument();
@@ -71,10 +72,10 @@ describe("ProfilesPage", () => {
 
   it("creates a profile via the dialog form", async () => {
     const user = userEvent.setup();
-    vi.mocked(listUserProfiles).mockResolvedValue({ data: [] });
-    vi.mocked(createUserProfile).mockResolvedValue({
-      data: { ...sampleProfile, id: "prof-2", name: "Bob" },
-    });
+    vi.mocked(listUserProfiles).mockResolvedValue(axiosOk([]));
+    vi.mocked(createUserProfile).mockResolvedValue(
+      axiosOk({ ...sampleProfile, id: "prof-2", name: "Bob" }),
+    );
 
     renderWithRouter(<ProfilesPage />);
     await waitFor(() => {
@@ -106,8 +107,8 @@ describe("ProfilesPage", () => {
 
   it("deletes a profile", async () => {
     const user = userEvent.setup();
-    vi.mocked(listUserProfiles).mockResolvedValue({ data: [sampleProfile] });
-    vi.mocked(deleteUserProfile).mockResolvedValue({});
+    vi.mocked(listUserProfiles).mockResolvedValue(axiosOk([sampleProfile]));
+    vi.mocked(deleteUserProfile).mockResolvedValue(axiosOk(undefined));
 
     renderWithRouter(<ProfilesPage />);
     await waitFor(() => {

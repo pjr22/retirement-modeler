@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 class AccountControllerTest extends BaseIntegrationTest {
 
-  private String userId;
+  private String profileId;
 
   @BeforeEach
   void createUser() throws Exception {
@@ -39,7 +39,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                         """))
             .andExpect(status().isCreated())
             .andReturn();
-    userId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+    profileId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
   }
 
   @Nested
@@ -49,7 +49,7 @@ class AccountControllerTest extends BaseIntegrationTest {
     void createsAccountAndReturns201() throws Exception {
       mockMvc
           .perform(
-              post("/api/users/{userId}/accounts", userId)
+              post("/api/users/{profileId}/accounts", profileId)
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(
                       """
@@ -64,7 +64,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                             """))
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.id").exists())
-          .andExpect(jsonPath("$.userId").value(userId))
+          .andExpect(jsonPath("$.userProfileId").value(profileId))
           .andExpect(jsonPath("$.name").value("My 401k"))
           .andExpect(jsonPath("$.accountType").value("TRADITIONAL_401K"))
           .andExpect(jsonPath("$.balance").value(50000))
@@ -75,7 +75,7 @@ class AccountControllerTest extends BaseIntegrationTest {
     void createsPensionAccount() throws Exception {
       mockMvc
           .perform(
-              post("/api/users/{userId}/accounts", userId)
+              post("/api/users/{profileId}/accounts", profileId)
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(
                       """
@@ -95,15 +95,15 @@ class AccountControllerTest extends BaseIntegrationTest {
   }
 
   @Nested
-  class GetByUserId {
+  class GetByProfileId {
 
     @Test
-    void returnsAccountsForUser() throws Exception {
+    void returnsAccountsForProfile() throws Exception {
       createAccount("Account 1", "ROTH_IRA");
       createAccount("Account 2", "HSA");
 
       mockMvc
-          .perform(get("/api/users/{userId}/accounts", userId))
+          .perform(get("/api/users/{profileId}/accounts", profileId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(2)));
     }
@@ -133,7 +133,7 @@ class AccountControllerTest extends BaseIntegrationTest {
                             """))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.id").value(accountId))
-          .andExpect(jsonPath("$.userId").value(userId))
+          .andExpect(jsonPath("$.userProfileId").value(profileId))
           .andExpect(jsonPath("$.name").value("New Name"))
           .andExpect(jsonPath("$.balance").value(75000));
     }
@@ -169,7 +169,7 @@ class AccountControllerTest extends BaseIntegrationTest {
       mockMvc.perform(delete("/api/accounts/{id}", accountId)).andExpect(status().isNoContent());
 
       mockMvc
-          .perform(get("/api/users/{userId}/accounts", userId))
+          .perform(get("/api/users/{profileId}/accounts", profileId))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$", hasSize(0)));
     }
@@ -179,7 +179,7 @@ class AccountControllerTest extends BaseIntegrationTest {
     MvcResult result =
         mockMvc
             .perform(
-                post("/api/users/{userId}/accounts", userId)
+                post("/api/users/{profileId}/accounts", profileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(
                         String.format(
