@@ -384,7 +384,6 @@ export default function SimulationResultsPage() {
                 // savings actually available (previous series balance + contributions). Income
                 // is paid directly to the user and never enters savings, so it's not part of
                 // the cap.
-                const flatTaxRate = scenario?.assumptions.flatTaxRate ?? 0;
                 let withdrawals: number;
                 if (selectedKey === "Deterministic") {
                   withdrawals = row.yearWithdrawals;
@@ -405,7 +404,18 @@ export default function SimulationResultsPage() {
                   withdrawals = Math.min(requested, availableSavings);
                 }
 
-                const tax = (income + withdrawals) * flatTaxRate;
+                // Tax: deterministic reads the engine's authoritative bracket-based figure.
+                // Non-deterministic series scale by an effective rate derived from the
+                // deterministic row, since we don't re-run the bracket computation per series.
+                // Phase 4.7 replaces this table with a proper tax-breakdown layout.
+                let tax: number;
+                if (selectedKey === "Deterministic") {
+                  tax = row.yearTax;
+                } else {
+                  const detBase = row.yearIncome + row.yearWithdrawals;
+                  const effectiveRate = detBase > 0 ? row.yearTax / detBase : 0;
+                  tax = (income + withdrawals) * effectiveRate;
+                }
 
                 return (
                   <TableRow key={row.date}>
@@ -434,8 +444,8 @@ export default function SimulationResultsPage() {
               Carlo trials.
               <br />
               {scenario.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE"
-                ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals. Tax is (withdrawals + income) × flat tax rate."
-                : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero. Tax is (withdrawals + income) × flat tax rate."}
+                ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals. Tax is approximated from the deterministic row's effective rate × (withdrawals + income)."
+                : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero. Tax is approximated from the deterministic row's effective rate × (withdrawals + income)."}
             </Typography>
           )}
         </Collapse>
