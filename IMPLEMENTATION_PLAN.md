@@ -8,9 +8,9 @@ A living plan. Update as work lands. `[x]` = done, `[ ]` = not done.
 
 **Last updated:** 2026-05-01
 
-**Current state:** Phases 0–3 are functionally complete plus a UX/correctness pass driven by manual regression testing. Backend, frontend, and integration tests all green. Multi-user isolation is enforced and exercised by 11 dedicated tests. Simulation now runs at monthly granularity.
+**Current state:** Phases 0–3 + 3.5 + 3.6 complete. Phase 4 backend complete through 4.6 — federal bracket-based tax modeling, LTCG with stacking, IRS Pub. 915 SS taxability, three withdrawal-ordering strategies (PROPORTIONAL / TAX_OPTIMIZED / CUSTOM), engine integration, V007 migration, and round-trip API tests all green (127 backend tests). Frontend has a stopgap fix in `SimulationResultsPage` so the existing Tax column reads `row.yearTax` instead of the now-defunct `flatTaxRate × (income+withdrawals)` derivation. **Phase 4.7 (frontend rebuild — strategy picker, new tax columns, breakdown chart, lifetime-tax stat, drop flatTaxRate UI) is next.**
 
-**Active work:** Phase 4 (enhanced tax modeling & withdrawal optimization) — see plan below.
+**Active work:** Phase 4.7 — frontend changes for the new tax model. See sub-plan below; HANDOFF.md has the open UI design questions.
 
 **Deviations from original plan to keep in mind:**
 - Phase 1's "in-memory storage" interim was skipped — went straight to Postgres + JPA + Flyway.
@@ -196,12 +196,12 @@ Simulations:
 
 ---
 
-## Phase 4 — Enhanced Tax Modeling & Withdrawal Optimization 🚧 (next up)
+## Phase 4 — Enhanced Tax Modeling & Withdrawal Optimization 🚧 (4.1–4.6 done; 4.7 next)
 
 **Goal:** Replace the flat-rate tax model with federal marginal brackets, capital-gains rates, and Social Security taxation rules. Add tax-aware withdrawal ordering and surface the resulting tax breakdown to users.
 
 ### Why this matters
-The current engine uses `flatTaxRate × (income + withdrawals)`, which ignores:
+The pre-Phase-4 engine used `flatTaxRate × (income + withdrawals)`, which ignored:
 - progressive ordinary-income brackets,
 - the lower long-term capital gains rate,
 - tax-free Roth distributions,
@@ -210,77 +210,75 @@ The current engine uses `flatTaxRate × (income + withdrawals)`, which ignores:
 
 Tax-aware withdrawal ordering can change a 30-year retirement's lifetime tax bill by tens of thousands of dollars, so the projection that drives user decisions needs to model it.
 
-### Sub-phase 4.1 — Tax bracket data model
-- [ ] Add a `tax/` package under `com.retirementmodeler`
-- [ ] `BracketTier` record `(BigDecimal threshold, BigDecimal rate)` (threshold is the lower bound of the bracket)
-- [ ] `TaxBrackets` value object: ordinary brackets per `FilingStatus`, LTCG brackets per `FilingStatus`, standard deduction per `FilingStatus`, base tax year
-- [ ] Hard-code 2025 federal brackets, LTCG rates, and standard deductions as the baseline (single source of truth, as code, in `FederalTaxBrackets2025` constants class)
-- [ ] `TaxBracketProvider` Spring bean with `bracketsForYear(int year, BigDecimal cumulativeInflationFactor)` that returns the baseline brackets with thresholds and the standard deduction inflated by the supplied factor (matches IRS bracket creep rules)
+### Sub-phase 4.1 — Tax bracket data model ✅
+- [x] `tax/` package under `com.retirementmodeler`.
+- [x] `BracketTier` record `(BigDecimal threshold, BigDecimal rate)`.
+- [x] `TaxBrackets` value object — ordinary brackets per `FilingStatus`, LTCG brackets per `FilingStatus`, standard deduction per `FilingStatus`, base tax year.
+- [x] **`FederalTaxBrackets2026`** (renamed from the planned `2025`) — sourced from IRS Rev. Proc. 2025-32, which incorporates the One Big Beautiful Bill Act amendments that made the TCJA 7-tier rate structure permanent in July 2025. All four filing statuses populated.
+- [x] `TaxBracketProvider` Spring bean with `bracketsForYear(int year, BigDecimal cumulativeInflationFactor)` — scales thresholds + standard deduction by the cumulative inflation factor; rates unchanged; lowest-tier $0 threshold preserved.
+- [x] 8 unit tests.
 
-### Sub-phase 4.2 — Tax calculator
-- [ ] `TaxCalculator` component with method:
-  ```
-  TaxResult compute(
-      FilingStatus status,
-      BigDecimal ordinaryIncome,        // wages, pension, taxable IRA/401k withdrawals, taxable SS
-      BigDecimal longTermCapitalGains,  // gains realized on taxable account withdrawals
-      TaxBrackets brackets)
-  ```
-- [ ] `TaxResult` record: `(BigDecimal ordinaryTaxableIncome, BigDecimal ordinaryTax, BigDecimal capitalGainsTax, BigDecimal totalTax, BigDecimal effectiveRate, BigDecimal marginalRate)`
-- [ ] Apply standard deduction first (against ordinary income); LTCG fills the LTCG bracket *stacked on top of* taxable ordinary income (so high-ordinary-income retirees pay 15% LTCG, low-income retirees pay 0%)
-- [ ] Unit tests covering: zero income, exactly-at-bracket-edge, mid-bracket, all four filing statuses, LTCG-stacking edge cases
+### Sub-phase 4.2 — Tax calculator ✅
+- [x] `TaxCalculator` Spring component with `compute(status, ordinaryIncome, longTermCapitalGains, brackets) → TaxResult`.
+- [x] `TaxResult` record `(ordinaryTaxableIncome, ordinaryTax, capitalGainsTax, totalTax, effectiveRate, marginalRate)`.
+- [x] Standard deduction applied to ordinary income first; **deduction "spills over" onto LTCG when ordinary alone is below deduction** (matches IRS Qualified Dividends & Capital Gains Tax Worksheet exactly — important for retirees in Roth+brokerage-heavy years).
+- [x] LTCG stacked on top of taxable ordinary income.
+- [x] 14 unit tests covering all four filing statuses, bracket edges, mid-bracket, LTCG split across tiers, deduction-absorbs-LTCG case.
 
-### Sub-phase 4.3 — Social Security taxation
-- [ ] `SocialSecurityTaxer` component implementing the IRS provisional-income test:
-  - Provisional income = AGI (excluding SS) + tax-exempt interest + ½ × SS benefits
-  - Below first threshold (`$25K` single, `$32K` MFJ) → 0% of SS taxable
-  - Between thresholds → up to 50% taxable
-  - Above second threshold (`$34K` / `$44K`) → up to 85% taxable
-- [ ] These thresholds are *not* inflation-adjusted by law — keep them fixed
-- [ ] Unit tests for each tier and each filing status
+### Sub-phase 4.3 — Social Security taxation ✅
+- [x] `SocialSecurityTaxer` Spring component implementing IRS Pub. 915 Worksheet 1 with **tier-1 carryover** in the 85% formula (the part most implementations get wrong).
+- [x] Thresholds: Single/HoH $25K/$34K; MFJ $32K/$44K. **MFS defaults to "lived apart all year" (= Single thresholds)**; the "lived together at any time" case isn't modeled.
+- [x] Statutory thresholds — never inflation-adjusted.
+- [x] 17 unit tests covering all tiers × all filing statuses + a property-style sweep verifying the [0, 0.85·SS] invariant.
 
-### Sub-phase 4.4 — Withdrawal ordering strategies
-- [ ] New enum `WithdrawalOrderingStrategy { PROPORTIONAL, TAX_OPTIMIZED, CUSTOM }`
-- [ ] `WithdrawalAllocator` interface with one method: `Map<UUID, BigDecimal> allocate(List<Account> accounts, BigDecimal amountNeeded)` — returns withdrawal-per-account
-- [ ] `ProportionalAllocator` — current behavior, default for backwards compatibility on existing scenarios
-- [ ] `TaxOptimizedAllocator` — drains in order: TAXABLE_BROKERAGE / SAVINGS → TRADITIONAL_401K / TRADITIONAL_IRA → ROTH_401K / ROTH_IRA / HSA. Pension and Social Security are not "withdrawal sources" — they're income that arrives independently.
-- [ ] `CustomAllocator` — drains in user-supplied order (`List<AccountType>` in the scenario)
-- [ ] Add `withdrawalOrderingStrategy` and `customWithdrawalOrder` to `SimulationAssumptions`
-- [ ] Unit tests: balances drained correctly when one bucket runs out mid-year, custom ordering respects user list, proportional matches existing behavior
+### Sub-phase 4.4 — Withdrawal ordering strategies ✅
+- [x] `WithdrawalOrderingStrategy { PROPORTIONAL, TAX_OPTIMIZED, CUSTOM }` enum in `model/`.
+- [x] `simulation/withdrawal/` package with `AccountSnapshot` record, `WithdrawalAllocator` interface, and three implementations.
+- [x] `ProportionalAllocator` — single-tier proportional split (preserves legacy behavior).
+- [x] `TaxOptimizedAllocator` — fixed tiers `[TAXABLE_BROKERAGE, SAVINGS] → [TRADITIONAL_401K, TRADITIONAL_IRA] → [ROTH_401K, ROTH_IRA, HSA]` with a defensive fallback tier for any future enum additions. **RMDs not modeled — Phase 5.**
+- [x] `CustomAllocator` — user-supplied `List<AccountType>` order; missing types fall to a final tier (so a forgotten type doesn't silently suppress withdrawals); duplicates folded.
+- [x] Shared `TieredDrain` package-private helper.
+- [x] 23 unit tests across the three allocators.
 
-### Sub-phase 4.5 — Wire it into the simulation engine
-- [ ] Refactor `SimulationEngine` to:
-  - Track per-year `ordinaryIncome`, `longTermCapitalGains`, `socialSecurityBenefit`, `taxableSocialSecurity` separately rather than lumping into `yearIncome`
-  - Use `WithdrawalAllocator` instead of the inline proportional distribution
-  - Categorize each withdrawal: traditional pre-tax → ordinary income; Roth/HSA → tax-free; taxable brokerage → LTCG (assume 100% gains for MVP since we don't track basis; flag this assumption in the response)
-  - Call `SocialSecurityTaxer` with the year's other ordinary income to compute taxable SS
-  - Call `TaxCalculator` with the categorized totals
-- [ ] Extend `YearlyProjection` record with: `ordinaryIncome`, `capitalGains`, `socialSecurityBenefit`, `taxableSocialSecurity`, `ordinaryTax`, `capitalGainsTax` (keep existing fields; the old `totalTax` becomes the sum of ordinary + capital gains)
-- [ ] Backwards compatibility: if a scenario still has `flatTaxRate` populated and explicitly opts in (e.g. legacy `withdrawalOrderingStrategy = null` treated as PROPORTIONAL with flat tax), keep the old code path. Otherwise use the new path. Document this in the engine.
-- [ ] Update `MonteCarloEngine` — should "just work" since it delegates to `SimulationEngine.projectSingleTrial`, but verify
+### Sub-phase 4.5 — Engine wiring ✅
+- [x] **V007 migration** bundled here (rather than in 4.6) so the running app survives the schema change. Drops `flat_tax_rate`; adds `withdrawal_ordering_strategy` (backfilled `PROPORTIONAL`); creates `scenario_custom_withdrawal_order` join table; truncates `simulation_results`.
+- [x] `SimulationAssumptions` — `flatTaxRate` removed entirely (no backwards-compat path per user direction); `withdrawalOrderingStrategy` + `customWithdrawalOrder` fields added with JPA mapping (`@ElementCollection` + `@OrderColumn` for the ordered list). Field-level defaults so Jackson's no-arg-constructor-then-setters deserialization gets PROPORTIONAL even when the JSON omits the field; setters null-coalesce.
+- [x] `YearlyProjection` extended with `yearOrdinaryIncome`, `yearCapitalGains`, `yearSocialSecurityBenefit`, `yearTaxableSocialSecurity`, `yearOrdinaryTax`, `yearCapitalGainsTax`. `yearTax` now equals their sum.
+- [x] `SimulationEngine` refactored: constructor-injects the three tax components; all public methods take `FilingStatus`; per-month tracking of non-SS income, gross SS, traditional-withdrawal ordinary, brokerage-withdrawal LTCG; year-end pipeline `SocialSecurityTaxer → TaxBracketProvider → TaxCalculator`.
+- [x] **Withdrawal categorization**: `TRADITIONAL_*` → ordinary; `TAXABLE_BROKERAGE` → LTCG (100% gains assumed since basis isn't tracked); `ROTH_*`/`HSA`/`SAVINGS` → tax-free for projection purposes (savings interest is technically ordinary income; the simplification slightly under-taxes savings — acceptable for MVP given typical balances).
+- [x] `MonteCarloEngine` and `SimulationService` thread `FilingStatus` from `UserProfile`.
+- [x] 7 new engine integration tests (Roth tax-free, Traditional ordinary, Brokerage LTCG, Savings tax-free, SS 85% taxability, TAX_OPTIMIZED ordering, PROPORTIONAL vs TAX_OPTIMIZED diff).
+- [x] **Year-alignment caveat documented**: rows are anchored to retirement month, so the 12-month aggregation window is e.g. Nov–Oct rather than Jan–Dec; brackets still looked up by calendar year. ≤3 months of income placed in the wrong calendar year — small relative to other approximations.
 
-### Sub-phase 4.6 — Persistence & API surface
-- [ ] New Flyway migration `V002__phase4_tax_modeling.sql`:
-  - Add `withdrawal_ordering_strategy VARCHAR(255)` to `scenarios` (nullable, default `PROPORTIONAL` for existing rows)
-  - Add `custom_withdrawal_order` (probably an `@ElementCollection` join table `scenario_custom_withdrawal_order` with ordered position)
-- [ ] Update `SimulationAssumptions` JPA mapping for new fields
-- [ ] Update frontend `SimulationAssumptions` TypeScript type and `Scenario` shape to match
-- [ ] Existing scenarios continue to work (default strategy = PROPORTIONAL preserves prior behavior)
+### Sub-phase 4.5 follow-up — frontend stopgap fix
+- [x] `SimulationResultsPage.tsx` Tax column was deriving `(income+withdrawals) × flatTaxRate` client-side, which now resolves to 0 (flatTaxRate gone). **Fixed**: deterministic series reads `row.yearTax` directly; non-deterministic series scales by an effective rate derived from the deterministic row. **The "Flat Tax Rate" line in the assumptions table still shows "0%" — replaced properly in 4.7.**
 
-### Sub-phase 4.7 — Frontend changes
-- [ ] Scenario editor: add "Withdrawal Ordering" section with strategy dropdown. When `CUSTOM`, show a drag-and-drop (or simple up/down arrows) list of account types to order
-- [ ] Remove the `flatTaxRate` input from the scenario form — it's now derived. Replace with a read-only "Filing status drives federal brackets" hint linking to the profile page
+### Sub-phase 4.6 — Persistence & API round-trip ✅
+- [x] V007 migration (already done in 4.5).
+- [x] `SimulationAssumptions` JPA mapping for new fields (already done in 4.5).
+- [x] **Audit confirmed no DTO layer** — controllers take/return `Scenario` directly via Jackson; new fields surface via getters automatically.
+- [x] Cleaned `flatTaxRate` from controller-test JSON (Jackson silently ignored it but it was misleading).
+- [x] Added 3 round-trip tests in `ScenarioControllerTest`: TAX_OPTIMIZED creation, CUSTOM with `customWithdrawalOrder` list, default-to-PROPORTIONAL when client omits the field.
+- [x] **Bug caught and fixed**: Jackson uses no-arg constructor + setters when deserializing, so the public constructor's "default to PROPORTIONAL" never fired for API requests. Fixed by initializing the fields at declaration and having the setters null-coalesce.
+
+### Sub-phase 4.7 — Frontend changes (next session)
+- [ ] Scenario editor: add "Withdrawal Ordering" section with strategy dropdown. When `CUSTOM`, show an account-type ordering picker (drag-and-drop vs simple up/down arrows — open UI decision).
+- [ ] Remove the `flatTaxRate` input from the scenario form — it's now derived. Replace with a read-only "Filing status drives federal brackets" hint linking to the profile page.
+- [ ] Replace the assumptions-table "Flat Tax Rate" row with a filing-status row.
+- [ ] Update `frontend/src/types.ts`: drop `flatTaxRate` from `SimulationAssumptions`; add `withdrawalOrderingStrategy`, `customWithdrawalOrder`; extend `YearlyProjection` with the six new tax fields.
 - [ ] `SimulationResultsPage`:
-  - Add new columns to the year-by-year table: ordinary income, capital gains, ordinary tax, capital-gains tax
-  - New "Tax Breakdown" stacked-bar chart: per year, stack of ordinary tax + capital gains tax (alongside the existing portfolio chart)
-  - Stat card: lifetime tax paid (sum across all projection years)
-- [ ] Update existing tests; add new tests for the strategy selector and tax-breakdown rendering
+  - Replace the stopgap Tax column with separate Ordinary Tax + Capital Gains Tax columns (sourced from `row.yearOrdinaryTax` / `row.yearCapitalGainsTax`).
+  - Possibly add Ordinary Income + Capital Gains breakdown columns.
+  - New "Tax Breakdown" stacked-bar chart per year (ordinary + capital-gains tax).
+  - Stat card: lifetime tax paid.
+- [ ] Update frontend tests across `ScenarioDetailPage.test.tsx`, `ScenariosPage.test.tsx`, `SimulationResultsPage.test.tsx`, `ProfilesPage.test.tsx`, `ProfileDetailPage.test.tsx`, `AccountsPage.test.tsx` — anywhere that mocks API responses with `flatTaxRate`.
+- [ ] Manual browser test against running backend.
 
 ### Sub-phase 4.8 — Test coverage and validation
-- [ ] Backend integration test: realistic scenario (e.g. $1M traditional IRA, $500K Roth, $200K taxable, MFJ, $30K SS) → verify total tax differs meaningfully (>10%) between PROPORTIONAL+flat-rate and TAX_OPTIMIZED+brackets
-- [ ] Backend unit tests for each tax component (4.1–4.4) listed above
-- [ ] Frontend test for the new scenario editor section and results columns
-- [ ] Manual sanity check: simulate, compare year-by-year output against a hand-calculated tax for one or two years
+- [ ] Backend integration test: realistic scenario (e.g. $1M traditional IRA, $500K Roth, $200K taxable, MFJ, $30K SS) → verify total tax differs meaningfully (>10%) between PROPORTIONAL and TAX_OPTIMIZED.
+- [x] Backend unit tests for each tax component (4.1–4.4) listed above.
+- [ ] Frontend test for the new scenario editor section and results columns.
+- [ ] Manual sanity check: simulate, compare year-by-year output against a hand-calculated tax for one or two years.
 
 ### Out of scope for Phase 4 (intentional)
 - State income tax (federal-only for now)

@@ -60,8 +60,7 @@ class IncomeSourceControllerTest extends BaseIntegrationTest {
                             "withdrawalPercentage": 0.04,
                             "withdrawalMonthlyAmount": null,
                             "standardDeviation": 0.12,
-                            "monteCarloTrials": 100,
-                            "flatTaxRate": 0.22
+                            "monteCarloTrials": 100
                           }
                         }
                         """))

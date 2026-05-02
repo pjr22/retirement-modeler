@@ -31,9 +31,13 @@ public class SimulationAssumptions {
 
   private Integer monteCarloTrials;
 
+  // Field-level initialization so Jackson (no-arg constructor + setters) gets the default
+  // even when the JSON omits the field. The setters null-coalesce to preserve the same
+  // semantics when the JSON sends an explicit null.
   @Enumerated(EnumType.STRING)
   @Column(name = "withdrawal_ordering_strategy")
-  private WithdrawalOrderingStrategy withdrawalOrderingStrategy;
+  private WithdrawalOrderingStrategy withdrawalOrderingStrategy =
+      WithdrawalOrderingStrategy.PROPORTIONAL;
 
   @ElementCollection(fetch = FetchType.EAGER)
   @CollectionTable(
@@ -42,7 +46,7 @@ public class SimulationAssumptions {
   @OrderColumn(name = "position")
   @Column(name = "account_type")
   @Enumerated(EnumType.STRING)
-  private List<AccountType> customWithdrawalOrder;
+  private List<AccountType> customWithdrawalOrder = new ArrayList<>();
 
   protected SimulationAssumptions() {}
 
@@ -132,7 +136,10 @@ public class SimulationAssumptions {
   }
 
   public void setWithdrawalOrderingStrategy(WithdrawalOrderingStrategy withdrawalOrderingStrategy) {
-    this.withdrawalOrderingStrategy = withdrawalOrderingStrategy;
+    this.withdrawalOrderingStrategy =
+        withdrawalOrderingStrategy != null
+            ? withdrawalOrderingStrategy
+            : WithdrawalOrderingStrategy.PROPORTIONAL;
   }
 
   public List<AccountType> getCustomWithdrawalOrder() {

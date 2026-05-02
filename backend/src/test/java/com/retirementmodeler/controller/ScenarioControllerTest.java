@@ -63,8 +63,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                 "withdrawalPercentage": 0.04,
                                 "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.12,
-                                "monteCarloTrials": 1000,
-                                "flatTaxRate": 0.22
+                                "monteCarloTrials": 1000
                               }
                             }
                             """))
@@ -99,14 +98,110 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                         "withdrawalPercentage": null,
                                         "withdrawalMonthlyAmount": 6500,
                                         "standardDeviation": 0.15,
-                                        "monteCarloTrials": 500,
-                                        "flatTaxRate": 0.20
+                                        "monteCarloTrials": 500
                                       }
                                     }
                                     """,
                           accountId)))
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.accountIds", hasSize(1)));
+    }
+
+    @Test
+    void createsScenarioWithWithdrawalOrderingStrategy() throws Exception {
+      // Phase 4: round-trip the new TAX_OPTIMIZED strategy through create + fetch.
+      mockMvc
+          .perform(
+              post("/api/users/{profileId}/scenarios", profileId)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                                {
+                                  "name": "Tax-Optimized",
+                                  "description": null,
+                                  "accountIds": [],
+                                  "assumptions": {
+                                    "expectedRateOfReturn": 0.06,
+                                    "inflationRate": 0.025,
+                                    "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
+                                    "withdrawalPercentage": 0.04,
+                                    "withdrawalMonthlyAmount": null,
+                                    "standardDeviation": 0.12,
+                                    "monteCarloTrials": 100,
+                                    "withdrawalOrderingStrategy": "TAX_OPTIMIZED"
+                                  }
+                                }
+                                """))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.assumptions.withdrawalOrderingStrategy").value("TAX_OPTIMIZED"))
+          .andExpect(jsonPath("$.assumptions.customWithdrawalOrder", hasSize(0)));
+    }
+
+    @Test
+    void createsScenarioWithCustomWithdrawalOrder() throws Exception {
+      // Phase 4: round-trip CUSTOM strategy with an explicit account-type ordering.
+      mockMvc
+          .perform(
+              post("/api/users/{profileId}/scenarios", profileId)
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(
+                      """
+                                {
+                                  "name": "Custom Order",
+                                  "description": null,
+                                  "accountIds": [],
+                                  "assumptions": {
+                                    "expectedRateOfReturn": 0.06,
+                                    "inflationRate": 0.025,
+                                    "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
+                                    "withdrawalPercentage": 0.04,
+                                    "withdrawalMonthlyAmount": null,
+                                    "standardDeviation": 0.12,
+                                    "monteCarloTrials": 100,
+                                    "withdrawalOrderingStrategy": "CUSTOM",
+                                    "customWithdrawalOrder": ["TAXABLE_BROKERAGE", "TRADITIONAL_IRA", "ROTH_IRA"]
+                                  }
+                                }
+                                """))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.assumptions.withdrawalOrderingStrategy").value("CUSTOM"))
+          .andExpect(jsonPath("$.assumptions.customWithdrawalOrder", hasSize(3)))
+          .andExpect(jsonPath("$.assumptions.customWithdrawalOrder[0]").value("TAXABLE_BROKERAGE"))
+          .andExpect(jsonPath("$.assumptions.customWithdrawalOrder[1]").value("TRADITIONAL_IRA"))
+          .andExpect(jsonPath("$.assumptions.customWithdrawalOrder[2]").value("ROTH_IRA"));
+    }
+
+    @Test
+    void omittingWithdrawalOrderingStrategyDefaultsToProportional() {
+      // Phase 4: when the client omits the field, the server fills in PROPORTIONAL so existing
+      // pre-Phase-4 scenario payloads continue to behave like the legacy proportional split.
+      try {
+        mockMvc
+            .perform(
+                post("/api/users/{profileId}/scenarios", profileId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                                  {
+                                    "name": "Default Ordering",
+                                    "description": null,
+                                    "accountIds": [],
+                                    "assumptions": {
+                                      "expectedRateOfReturn": 0.06,
+                                      "inflationRate": 0.025,
+                                      "withdrawalStrategy": "PORTFOLIO_PERCENTAGE",
+                                      "withdrawalPercentage": 0.04,
+                                      "withdrawalMonthlyAmount": null,
+                                      "standardDeviation": 0.12,
+                                      "monteCarloTrials": 100
+                                    }
+                                  }
+                                  """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.assumptions.withdrawalOrderingStrategy").value("PROPORTIONAL"));
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
     }
   }
 
@@ -170,8 +265,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                 "withdrawalPercentage": 0.035,
                                 "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.18,
-                                "monteCarloTrials": 2000,
-                                "flatTaxRate": 0.24
+                                "monteCarloTrials": 2000
                               }
                             }
                             """))
@@ -201,8 +295,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                 "withdrawalPercentage": 0.04,
                                 "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.12,
-                                "monteCarloTrials": 1000,
-                                "flatTaxRate": 0.22
+                                "monteCarloTrials": 1000
                               }
                             }
                             """))
@@ -263,8 +356,7 @@ class ScenarioControllerTest extends BaseIntegrationTest {
                                     "withdrawalPercentage": 0.04,
                                     "withdrawalMonthlyAmount": null,
                                     "standardDeviation": 0.12,
-                                    "monteCarloTrials": 1000,
-                                    "flatTaxRate": 0.22
+                                    "monteCarloTrials": 1000
                                   }
                                 }
                                 """,

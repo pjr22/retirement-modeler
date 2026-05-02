@@ -174,8 +174,7 @@ class SimulationControllerTest extends BaseIntegrationTest {
                                 "withdrawalPercentage": 0.04,
                                 "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.15,
-                                "monteCarloTrials": %d,
-                                "flatTaxRate": 0.22
+                                "monteCarloTrials": %d
                               }
                             }
                             """,

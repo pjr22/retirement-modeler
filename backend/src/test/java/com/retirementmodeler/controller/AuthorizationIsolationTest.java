@@ -94,8 +94,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                                 "withdrawalPercentage": 0.04,
                                 "withdrawalMonthlyAmount": null,
                                 "standardDeviation": 0.15,
-                                "monteCarloTrials": 5,
-                                "flatTaxRate": 0.22
+                                "monteCarloTrials": 5
                               }
                             }
                             """,
@@ -252,8 +251,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
                         "withdrawalPercentage": 0.04,
                         "withdrawalMonthlyAmount": null,
                         "standardDeviation": 0.15,
-                        "monteCarloTrials": 5,
-                        "flatTaxRate": 0.22
+                        "monteCarloTrials": 5
                       }
                     }
                     """))
