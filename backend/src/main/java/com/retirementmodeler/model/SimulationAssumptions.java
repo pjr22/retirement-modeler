@@ -1,9 +1,17 @@
 package com.retirementmodeler.model;
 
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderColumn;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Embeddable
 public class SimulationAssumptions {
@@ -23,7 +31,18 @@ public class SimulationAssumptions {
 
   private Integer monteCarloTrials;
 
-  private BigDecimal flatTaxRate;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "withdrawal_ordering_strategy")
+  private WithdrawalOrderingStrategy withdrawalOrderingStrategy;
+
+  @ElementCollection(fetch = FetchType.EAGER)
+  @CollectionTable(
+      name = "scenario_custom_withdrawal_order",
+      joinColumns = @JoinColumn(name = "scenario_id"))
+  @OrderColumn(name = "position")
+  @Column(name = "account_type")
+  @Enumerated(EnumType.STRING)
+  private List<AccountType> customWithdrawalOrder;
 
   protected SimulationAssumptions() {}
 
@@ -35,7 +54,8 @@ public class SimulationAssumptions {
       BigDecimal withdrawalMonthlyAmount,
       BigDecimal standardDeviation,
       Integer monteCarloTrials,
-      BigDecimal flatTaxRate) {
+      WithdrawalOrderingStrategy withdrawalOrderingStrategy,
+      List<AccountType> customWithdrawalOrder) {
     this.expectedRateOfReturn = expectedRateOfReturn;
     this.inflationRate = inflationRate;
     this.withdrawalStrategy = withdrawalStrategy;
@@ -43,7 +63,12 @@ public class SimulationAssumptions {
     this.withdrawalMonthlyAmount = withdrawalMonthlyAmount;
     this.standardDeviation = standardDeviation;
     this.monteCarloTrials = monteCarloTrials != null ? monteCarloTrials : 1000;
-    this.flatTaxRate = flatTaxRate;
+    this.withdrawalOrderingStrategy =
+        withdrawalOrderingStrategy != null
+            ? withdrawalOrderingStrategy
+            : WithdrawalOrderingStrategy.PROPORTIONAL;
+    this.customWithdrawalOrder =
+        customWithdrawalOrder != null ? new ArrayList<>(customWithdrawalOrder) : new ArrayList<>();
   }
 
   public BigDecimal getExpectedRateOfReturn() {
@@ -102,11 +127,20 @@ public class SimulationAssumptions {
     this.monteCarloTrials = monteCarloTrials;
   }
 
-  public BigDecimal getFlatTaxRate() {
-    return flatTaxRate;
+  public WithdrawalOrderingStrategy getWithdrawalOrderingStrategy() {
+    return withdrawalOrderingStrategy;
   }
 
-  public void setFlatTaxRate(BigDecimal flatTaxRate) {
-    this.flatTaxRate = flatTaxRate;
+  public void setWithdrawalOrderingStrategy(WithdrawalOrderingStrategy withdrawalOrderingStrategy) {
+    this.withdrawalOrderingStrategy = withdrawalOrderingStrategy;
+  }
+
+  public List<AccountType> getCustomWithdrawalOrder() {
+    return customWithdrawalOrder;
+  }
+
+  public void setCustomWithdrawalOrder(List<AccountType> customWithdrawalOrder) {
+    this.customWithdrawalOrder =
+        customWithdrawalOrder != null ? new ArrayList<>(customWithdrawalOrder) : new ArrayList<>();
   }
 }

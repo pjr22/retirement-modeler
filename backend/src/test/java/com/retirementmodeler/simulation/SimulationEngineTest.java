@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.retirementmodeler.model.Account;
 import com.retirementmodeler.model.AccountType;
+import com.retirementmodeler.model.FilingStatus;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.IncomeType;
 import com.retirementmodeler.model.SimulationAssumptions;
+import com.retirementmodeler.model.WithdrawalOrderingStrategy;
 import com.retirementmodeler.model.WithdrawalStrategy;
 import com.retirementmodeler.model.YearlyProjection;
 import java.lang.reflect.Field;
@@ -44,6 +46,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(ss),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -79,6 +82,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(job, ss),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -88,6 +92,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(ss),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -139,6 +144,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(job, ss),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -148,6 +154,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(ss),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -177,6 +184,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(pension),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -205,6 +213,7 @@ class SimulationEngineTest {
             List.of(),
             List.of(side),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -229,6 +238,7 @@ class SimulationEngineTest {
             List.of(savings),
             List.of(pension),
             assumptions(WithdrawalStrategy.CASHFLOW_TARGET, null, bd(5000), bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -253,6 +263,7 @@ class SimulationEngineTest {
             List.of(savings),
             List.of(pension),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -262,6 +273,7 @@ class SimulationEngineTest {
             List.of(savings),
             List.of(),
             assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
             dob,
             retire,
             lifeExpectancyAge);
@@ -273,6 +285,284 @@ class SimulationEngineTest {
         .isCloseTo(firstWithout.yearWithdrawals(), within(firstWithout.yearWithdrawals(), 1));
   }
 
+  // ---- Phase 4 tax-categorization tests ----
+
+  /** Roth withdrawals never produce taxable income — projection should show zero tax everywhere. */
+  @Test
+  void rothWithdrawalsAreTaxFree() {
+    Account roth = account(AccountType.ROTH_IRA, bd(1_000_000));
+    LocalDate dob = TODAY.minusYears(67); // Already at FRA, no SS in this test
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 75;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(roth),
+            List.of(),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal totalWithdrawals =
+        rows.stream()
+            .map(YearlyProjection::yearWithdrawals)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertThat(totalWithdrawals).as("withdrawals happened").isPositive();
+
+    for (YearlyProjection row : rows) {
+      assertThat(row.yearOrdinaryIncome())
+          .as("ordinary income at %s", row.date())
+          .isEqualByComparingTo("0");
+      assertThat(row.yearCapitalGains()).as("LTCG at %s", row.date()).isEqualByComparingTo("0");
+      assertThat(row.yearOrdinaryTax())
+          .as("ordinary tax at %s", row.date())
+          .isEqualByComparingTo("0");
+      assertThat(row.yearCapitalGainsTax())
+          .as("LTCG tax at %s", row.date())
+          .isEqualByComparingTo("0");
+      assertThat(row.yearTax()).as("total tax at %s", row.date()).isEqualByComparingTo("0");
+    }
+  }
+
+  /** Traditional withdrawals fold into ordinary income and produce bracket-based tax. */
+  @Test
+  void traditionalWithdrawalsAreOrdinaryIncome() {
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(1_000_000));
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 75;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad),
+            List.of(),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    // Pick a full-year row (second emit onwards = 12-month aggregation).
+    YearlyProjection fullYear = rows.get(rows.size() - 1);
+    assertThat(fullYear.yearOrdinaryIncome()).isEqualByComparingTo(fullYear.yearWithdrawals());
+    assertThat(fullYear.yearCapitalGains()).isEqualByComparingTo("0");
+    assertThat(fullYear.yearOrdinaryTax())
+        .as("traditional withdrawals in retirement should produce non-zero ordinary tax")
+        .isPositive();
+    assertThat(fullYear.yearTax()).isEqualByComparingTo(fullYear.yearOrdinaryTax());
+  }
+
+  /** Taxable-brokerage withdrawals are LTCG (100% gains assumed). */
+  @Test
+  void brokerageWithdrawalsAreCapitalGains() {
+    // Big balance so 4% draws are large enough to clear the 0% LTCG bracket and incur real tax.
+    Account brokerage = account(AccountType.TAXABLE_BROKERAGE, bd(5_000_000));
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 75;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(brokerage),
+            List.of(),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    YearlyProjection fullYear = rows.get(rows.size() - 1);
+    assertThat(fullYear.yearOrdinaryIncome()).isEqualByComparingTo("0");
+    assertThat(fullYear.yearCapitalGains()).isEqualByComparingTo(fullYear.yearWithdrawals());
+    assertThat(fullYear.yearCapitalGainsTax()).isPositive();
+    assertThat(fullYear.yearOrdinaryTax()).isEqualByComparingTo("0");
+    assertThat(fullYear.yearTax()).isEqualByComparingTo(fullYear.yearCapitalGainsTax());
+  }
+
+  /** Savings withdrawals are treated as tax-free (interest is not separately tracked). */
+  @Test
+  void savingsWithdrawalsAreTaxFree() {
+    Account savings = account(AccountType.SAVINGS, bd(500_000));
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 75;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(savings),
+            List.of(),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    for (YearlyProjection row : rows) {
+      assertThat(row.yearTax()).as("tax at %s", row.date()).isEqualByComparingTo("0");
+    }
+  }
+
+  /** SS becomes 85% taxable when other ordinary income pushes provisional income well past T2. */
+  @Test
+  void socialSecurityFolds85PercentIntoOrdinaryWhenOtherIncomeIsHigh() {
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(2_000_000));
+    IncomeSource ss = source("SS", IncomeType.SOCIAL_SECURITY, bd(3_000), TODAY, null, false);
+
+    LocalDate dob = TODAY.minusYears(67); // At FRA; no earnings test interference
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 75;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad),
+            List.of(ss),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    YearlyProjection fullYear = rows.get(rows.size() - 1);
+    // 4% of $2M = $80K traditional withdrawals + $36K SS gross. Provisional ≈ $98K, well past
+    // the Single $34K T2 → 85% SS cap binds.
+    BigDecimal expectedTaxableSS =
+        fullYear.yearSocialSecurityBenefit().multiply(new BigDecimal("0.85"));
+    assertThat(fullYear.yearTaxableSocialSecurity())
+        .isCloseTo(expectedTaxableSS, Offset.offset(new BigDecimal("0.01")));
+    // ordinaryIncome = withdrawals + taxable-SS (no other non-SS income source).
+    assertThat(fullYear.yearOrdinaryIncome())
+        .isEqualByComparingTo(fullYear.yearWithdrawals().add(fullYear.yearTaxableSocialSecurity()));
+  }
+
+  /** TAX_OPTIMIZED ordering drains taxable-brokerage entirely before touching traditional. */
+  @Test
+  void taxOptimizedOrderingDrainsBrokerageBeforeTraditional() {
+    Account brokerage = account(AccountType.TAXABLE_BROKERAGE, bd(100_000));
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(100_000));
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 70; // Short horizon — $200K covers it at 4% draws
+
+    SimulationAssumptions assumptions =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.TAX_OPTIMIZED,
+            null);
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(brokerage, trad),
+            List.of(),
+            assumptions,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal totalOrdinary =
+        rows.stream()
+            .map(YearlyProjection::yearOrdinaryIncome)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalLtcg =
+        rows.stream()
+            .map(YearlyProjection::yearCapitalGains)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // Over a 3-year horizon at 4%/year, the brokerage tier never empties → all draws are LTCG.
+    assertThat(totalOrdinary).isEqualByComparingTo("0");
+    assertThat(totalLtcg).isPositive();
+  }
+
+  /**
+   * Compare PROPORTIONAL vs TAX_OPTIMIZED on the same accounts — different tax base, same total.
+   */
+  @Test
+  void proportionalAndTaxOptimizedDifferInTaxBaseButNotInTotalWithdrawn() {
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 70;
+
+    SimulationAssumptions proportional =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.PROPORTIONAL,
+            null);
+    SimulationAssumptions taxOptimized =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.TAX_OPTIMIZED,
+            null);
+
+    List<YearlyProjection> propRows =
+        engine.projectDeterministic(
+            List.of(
+                account(AccountType.TAXABLE_BROKERAGE, bd(100_000)),
+                account(AccountType.TRADITIONAL_IRA, bd(100_000))),
+            List.of(),
+            proportional,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+    List<YearlyProjection> taxRows =
+        engine.projectDeterministic(
+            List.of(
+                account(AccountType.TAXABLE_BROKERAGE, bd(100_000)),
+                account(AccountType.TRADITIONAL_IRA, bd(100_000))),
+            List.of(),
+            taxOptimized,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal propWithdrawals =
+        propRows.stream()
+            .map(YearlyProjection::yearWithdrawals)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal taxWithdrawals =
+        taxRows.stream()
+            .map(YearlyProjection::yearWithdrawals)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // Same total withdrawn (4% applied to same starting portfolio with same returns).
+    assertThat(taxWithdrawals).isCloseTo(propWithdrawals, within(propWithdrawals, 1));
+
+    // PROPORTIONAL splits 50/50 between tiers each month → some ordinary income each year.
+    BigDecimal propOrdinary =
+        propRows.stream()
+            .map(YearlyProjection::yearOrdinaryIncome)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertThat(propOrdinary).isPositive();
+
+    // TAX_OPTIMIZED keeps traditional untouched while brokerage covers the draws.
+    BigDecimal taxOrdinary =
+        taxRows.stream()
+            .map(YearlyProjection::yearOrdinaryIncome)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    assertThat(taxOrdinary).isEqualByComparingTo("0");
+  }
+
   // ---- helpers ----
 
   private static SimulationAssumptions assumptions(
@@ -281,7 +571,7 @@ class SimulationEngineTest {
       BigDecimal monthlyAmount,
       BigDecimal returnRate) {
     return new SimulationAssumptions(
-        returnRate, bd(0), strategy, pct, monthlyAmount, bd(0), 1, bd(0));
+        returnRate, bd(0), strategy, pct, monthlyAmount, bd(0), 1, null, null);
   }
 
   private static IncomeSource source(

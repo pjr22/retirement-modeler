@@ -1,6 +1,7 @@
 package com.retirementmodeler.simulation;
 
 import com.retirementmodeler.model.Account;
+import com.retirementmodeler.model.FilingStatus;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.MonteCarloSummary;
 import com.retirementmodeler.model.PercentilePoint;
@@ -27,6 +28,7 @@ public class MonteCarloEngine {
       List<Account> accounts,
       List<IncomeSource> incomeSources,
       SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
       LocalDate dateOfBirth,
       LocalDate plannedRetirementDate,
       int lifeExpectancy,
@@ -47,6 +49,7 @@ public class MonteCarloEngine {
               accounts,
               incomeSources,
               assumptions,
+              filingStatus,
               dateOfBirth,
               plannedRetirementDate,
               lifeExpectancy,

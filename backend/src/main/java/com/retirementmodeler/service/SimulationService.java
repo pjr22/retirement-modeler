@@ -67,6 +67,7 @@ public class SimulationService {
             selectedAccounts,
             selectedIncomeSources,
             assumptions,
+            profile.getFilingStatus(),
             profile.getDateOfBirth(),
             profile.getPlannedRetirementDate(),
             profile.getLifeExpectancy());
@@ -80,6 +81,7 @@ public class SimulationService {
             selectedAccounts,
             selectedIncomeSources,
             assumptions,
+            profile.getFilingStatus(),
             profile.getDateOfBirth(),
             profile.getPlannedRetirementDate(),
             profile.getLifeExpectancy(),

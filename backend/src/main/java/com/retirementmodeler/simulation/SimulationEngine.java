@@ -2,10 +2,22 @@ package com.retirementmodeler.simulation;
 
 import com.retirementmodeler.model.Account;
 import com.retirementmodeler.model.AccountType;
+import com.retirementmodeler.model.FilingStatus;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.IncomeType;
 import com.retirementmodeler.model.SimulationAssumptions;
+import com.retirementmodeler.model.WithdrawalOrderingStrategy;
 import com.retirementmodeler.model.YearlyProjection;
+import com.retirementmodeler.simulation.withdrawal.AccountSnapshot;
+import com.retirementmodeler.simulation.withdrawal.CustomAllocator;
+import com.retirementmodeler.simulation.withdrawal.ProportionalAllocator;
+import com.retirementmodeler.simulation.withdrawal.TaxOptimizedAllocator;
+import com.retirementmodeler.simulation.withdrawal.WithdrawalAllocator;
+import com.retirementmodeler.tax.SocialSecurityTaxer;
+import com.retirementmodeler.tax.TaxBracketProvider;
+import com.retirementmodeler.tax.TaxBrackets;
+import com.retirementmodeler.tax.TaxCalculator;
+import com.retirementmodeler.tax.TaxResult;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
@@ -15,7 +27,10 @@ import java.time.Period;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.function.DoubleSupplier;
 import java.util.function.Predicate;
 import org.springframework.stereotype.Component;
@@ -27,10 +42,41 @@ import org.springframework.stereotype.Component;
  * yearContributions}, {@code yearWithdrawals}, etc.) cover the 12 months ending at that row's date.
  *
  * <p>Income comes from {@link IncomeSource} entities (pension, Social Security, employment, rental,
- * etc.). Pension and Social Security are no longer accounts; they are income streams that arrive
- * directly to the user. Social Security receives the SSA earnings-test treatment: pre-FRA earned
- * income causes a benefit reduction, and the cumulative withheld amount is recouped as a permanent
- * monthly bonus starting at FRA.
+ * etc.). Pension and Social Security are not accounts; they are income streams that arrive directly
+ * to the user. Social Security receives the SSA earnings-test treatment: pre-FRA earned income
+ * causes a benefit reduction, and the cumulative withheld amount is recouped as a permanent monthly
+ * bonus starting at FRA.
+ *
+ * <h2>Phase 4 tax model</h2>
+ *
+ * <p>Each year-anchor emit invokes the tax pipeline:
+ *
+ * <ol>
+ *   <li>{@link SocialSecurityTaxer} — computes the taxable portion of gross SS benefits given the
+ *       year's other income (provisional-income test).
+ *   <li>{@link TaxBracketProvider} — returns the year's federal brackets, scaled from the 2026
+ *       baseline by the simulation's cumulative inflation factor.
+ *   <li>{@link TaxCalculator} — computes ordinary tax (progressive brackets on
+ *       wages+pension+traditional-withdrawals+taxable-SS) and capital-gains tax (LTCG brackets
+ *       stacked on top of taxable ordinary income).
+ * </ol>
+ *
+ * <p>Withdrawals are categorized by {@link AccountType}:
+ *
+ * <ul>
+ *   <li>{@code TRADITIONAL_401K}, {@code TRADITIONAL_IRA} → ordinary income.
+ *   <li>{@code TAXABLE_BROKERAGE} → LTCG. <strong>Cost basis is not tracked; we assume 100%
+ *       gains.</strong> Conservative on the tax side; refine when basis tracking lands.
+ *   <li>{@code ROTH_401K}, {@code ROTH_IRA}, {@code HSA}, {@code SAVINGS} → tax-free for projection
+ *       purposes. Savings interest is technically ordinary income; the simplification slightly
+ *       under-taxes savings balances. Acceptable for MVP given typical balances.
+ * </ul>
+ *
+ * <p>Year alignment caveat: rows are anchored to the retirement month, so the 12-month aggregation
+ * window is e.g. Nov–Oct rather than Jan–Dec. Brackets are still looked up by calendar year, so tax
+ * for a row is computed against the brackets of the row's anchor year using a Nov–Oct income
+ * window. The mismatch is at most 1–3 months of income placed in the wrong calendar year — small
+ * relative to the other modeling approximations.
  */
 @Component
 public class SimulationEngine {
@@ -55,6 +101,24 @@ public class SimulationEngine {
   private static final BigDecimal YEAR_OF_FRA_REDUCTION_RATIO =
       BigDecimal.ONE.divide(BigDecimal.valueOf(3), MC);
 
+  private final TaxBracketProvider taxBracketProvider;
+  private final TaxCalculator taxCalculator;
+  private final SocialSecurityTaxer socialSecurityTaxer;
+
+  public SimulationEngine(
+      TaxBracketProvider taxBracketProvider,
+      TaxCalculator taxCalculator,
+      SocialSecurityTaxer socialSecurityTaxer) {
+    this.taxBracketProvider = taxBracketProvider;
+    this.taxCalculator = taxCalculator;
+    this.socialSecurityTaxer = socialSecurityTaxer;
+  }
+
+  /** Convenience constructor for tests — wires default instances of the tax components. */
+  public SimulationEngine() {
+    this(new TaxBracketProvider(), new TaxCalculator(), new SocialSecurityTaxer());
+  }
+
   private static BigDecimal scaled(BigDecimal v) {
     return v.setScale(INTERNAL_SCALE, ROUND);
   }
@@ -67,6 +131,7 @@ public class SimulationEngine {
       List<Account> accounts,
       List<IncomeSource> incomeSources,
       SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
       LocalDate dateOfBirth,
       LocalDate plannedRetirementDate,
       int lifeExpectancy) {
@@ -74,6 +139,7 @@ public class SimulationEngine {
         accounts,
         incomeSources,
         assumptions,
+        filingStatus,
         dateOfBirth,
         plannedRetirementDate,
         lifeExpectancy,
@@ -89,6 +155,7 @@ public class SimulationEngine {
       List<Account> accounts,
       List<IncomeSource> incomeSources,
       SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
       LocalDate dateOfBirth,
       LocalDate plannedRetirementDate,
       int lifeExpectancy,
@@ -97,6 +164,7 @@ public class SimulationEngine {
             accounts,
             incomeSources,
             assumptions,
+            filingStatus,
             dateOfBirth,
             plannedRetirementDate,
             lifeExpectancy,
@@ -110,18 +178,17 @@ public class SimulationEngine {
       List<Account> accounts,
       List<IncomeSource> incomeSources,
       SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
       LocalDate dateOfBirth,
       LocalDate plannedRetirementDate,
       int lifeExpectancy,
       DoubleSupplier monthlyReturnSampler) {
 
     List<IncomeSource> sources = incomeSources != null ? incomeSources : List.of();
+    FilingStatus status = filingStatus != null ? filingStatus : FilingStatus.SINGLE;
 
     LocalDate today = LocalDate.now().withDayOfMonth(1);
     LocalDate deathDate = dateOfBirth.plusYears(lifeExpectancy);
-    // A retirement / benefit-start "trigger date" takes effect at the start of the next full
-    // calendar month — except when the trigger is exactly the 1st of a month, in which case
-    // that month is the first active month.
     LocalDate retirementStart = transitionStart(plannedRetirementDate);
     Month rowAnchorMonth = plannedRetirementDate.getMonth();
 
@@ -136,16 +203,30 @@ public class SimulationEngine {
     BigDecimal inflationRate =
         assumptions.getInflationRate() != null ? assumptions.getInflationRate() : BigDecimal.ZERO;
 
-    // Per-account running balances.
+    WithdrawalAllocator allocator = buildAllocator(assumptions);
+
+    // Per-account running balances + a fast id→index lookup so we can apply the allocator's
+    // per-account result without scanning.
     List<BigDecimal> balances = new ArrayList<>(accounts.size());
-    for (Account a : accounts) {
+    Map<UUID, Integer> idxByUuid = new HashMap<>();
+    for (int i = 0; i < accounts.size(); i++) {
+      Account a = accounts.get(i);
       balances.add(scaled(a.getBalance() != null ? a.getBalance() : BigDecimal.ZERO));
+      if (a.getId() != null) {
+        idxByUuid.put(a.getId(), i);
+      }
     }
 
     BigDecimal inflationFactor = scaled(BigDecimal.ONE);
+
+    // Per-year aggregates. yearIncomeNonSS / yearSocialSecurityGross feed both the existing
+    // yearIncome field (their sum) and the new tax-breakdown fields.
     BigDecimal yearContributions = scaled(BigDecimal.ZERO);
     BigDecimal yearWithdrawals = scaled(BigDecimal.ZERO);
-    BigDecimal yearIncome = scaled(BigDecimal.ZERO);
+    BigDecimal yearIncomeNonSS = scaled(BigDecimal.ZERO);
+    BigDecimal yearSocialSecurityGross = scaled(BigDecimal.ZERO);
+    BigDecimal yearOrdinaryFromWithdrawals = scaled(BigDecimal.ZERO);
+    BigDecimal yearCapitalGainsFromWithdrawals = scaled(BigDecimal.ZERO);
 
     // SS earnings-test state. ssWithholdRemaining is reset at each calendar-year start to the
     // year's projected reduction; cumulativeWithheldPreFRA accumulates across years and is
@@ -209,8 +290,8 @@ public class SimulationEngine {
         }
       }
 
-      // 3. Income from all sources active this month. Aggregate SS separately so we can apply
-      // the earnings-test withhold (pre-FRA) and the recoup bonus (post-FRA) once at the user
+      // 3. Income from all sources active this month. SS is aggregated separately so we can
+      // apply the earnings-test withhold (pre-FRA) and recoup bonus (post-FRA) once at the user
       // level, not per source.
       BigDecimal monthIncomeNonSS = BigDecimal.ZERO;
       BigDecimal monthSSGross = BigDecimal.ZERO;
@@ -241,29 +322,72 @@ public class SimulationEngine {
 
       BigDecimal monthIncome = scaled(monthIncomeNonSS.add(monthSSPaid, MC));
 
-      // 4. Post-retirement withdrawals from savings. CASHFLOW_TARGET nets income; the
-      // strategy may still request more than savings have available, so we cap at totalBalance.
+      // 4. Post-retirement withdrawals. The allocator decides which accounts to drain from and
+      // returns the per-account split; we apply it back to balances and bucket each piece by its
+      // account's tax treatment.
       BigDecimal monthWithdrawal = BigDecimal.ZERO;
+      BigDecimal monthOrdinaryFromWithdrawals = BigDecimal.ZERO;
+      BigDecimal monthLtcgFromWithdrawals = BigDecimal.ZERO;
       if (isRetired) {
         BigDecimal totalBalanceNow = sum(balances);
         BigDecimal requested =
             computeMonthlyWithdrawal(totalBalanceNow, assumptions, inflationFactor, monthIncome);
-        monthWithdrawal = requested.min(totalBalanceNow);
-        if (monthWithdrawal.signum() > 0) {
-          distributeWithdrawal(balances, monthWithdrawal);
+        if (requested.signum() > 0 && totalBalanceNow.signum() > 0) {
+          List<AccountSnapshot> snapshots = new ArrayList<>(accounts.size());
+          for (int i = 0; i < accounts.size(); i++) {
+            snapshots.add(
+                new AccountSnapshot(
+                    accounts.get(i).getId(), accounts.get(i).getAccountType(), balances.get(i)));
+          }
+          Map<UUID, BigDecimal> allocation = allocator.allocate(snapshots, requested);
+          for (Map.Entry<UUID, BigDecimal> entry : allocation.entrySet()) {
+            Integer idx = idxByUuid.get(entry.getKey());
+            if (idx == null) continue;
+            BigDecimal share = entry.getValue();
+            if (share.signum() <= 0) continue;
+            balances.set(idx, scaled(balances.get(idx).subtract(share, MC)));
+            monthWithdrawal = scaled(monthWithdrawal.add(share, MC));
+            switch (accounts.get(idx).getAccountType()) {
+              case TRADITIONAL_401K, TRADITIONAL_IRA ->
+                  monthOrdinaryFromWithdrawals =
+                      scaled(monthOrdinaryFromWithdrawals.add(share, MC));
+              case TAXABLE_BROKERAGE ->
+                  monthLtcgFromWithdrawals = scaled(monthLtcgFromWithdrawals.add(share, MC));
+              case ROTH_401K, ROTH_IRA, HSA, SAVINGS -> {
+                // Tax-free for projection purposes — see class javadoc.
+              }
+            }
+          }
         }
       }
 
       yearContributions = scaled(yearContributions.add(monthContrib, MC));
       yearWithdrawals = scaled(yearWithdrawals.add(monthWithdrawal, MC));
-      yearIncome = scaled(yearIncome.add(monthIncome, MC));
+      yearIncomeNonSS = scaled(yearIncomeNonSS.add(monthIncomeNonSS, MC));
+      yearSocialSecurityGross = scaled(yearSocialSecurityGross.add(monthSSPaid, MC));
+      yearOrdinaryFromWithdrawals =
+          scaled(yearOrdinaryFromWithdrawals.add(monthOrdinaryFromWithdrawals, MC));
+      yearCapitalGainsFromWithdrawals =
+          scaled(yearCapitalGainsFromWithdrawals.add(monthLtcgFromWithdrawals, MC));
 
       // 5. Emit a row at each retirement-anchor month.
       if (currentMonth.getMonth() == rowAnchorMonth) {
         BigDecimal totalBalance = sum(balances);
-        BigDecimal flatTax =
-            assumptions.getFlatTaxRate() != null ? assumptions.getFlatTaxRate() : BigDecimal.ZERO;
-        BigDecimal yearTax = yearIncome.add(yearWithdrawals).multiply(flatTax, MC);
+
+        // Tax pipeline. Order matters: SS taxability depends on other ordinary income +
+        // capital gains; the calculator then fold taxable-SS into ordinary income.
+        BigDecimal ordinaryNonSS = yearIncomeNonSS.add(yearOrdinaryFromWithdrawals, MC);
+        BigDecimal capitalGains = yearCapitalGainsFromWithdrawals;
+        BigDecimal taxableSS =
+            socialSecurityTaxer.computeTaxableAmount(
+                status, yearSocialSecurityGross, ordinaryNonSS.add(capitalGains, MC));
+        BigDecimal ordinaryIncome = ordinaryNonSS.add(taxableSS, MC);
+
+        TaxBrackets brackets =
+            taxBracketProvider.bracketsForYear(currentMonth.getYear(), inflationFactor);
+        TaxResult tax = taxCalculator.compute(status, ordinaryIncome, capitalGains, brackets);
+
+        BigDecimal yearIncome = yearIncomeNonSS.add(yearSocialSecurityGross, MC);
 
         rows.add(
             new YearlyProjection(
@@ -273,13 +397,22 @@ public class SimulationEngine {
                 output(yearContributions),
                 output(yearWithdrawals),
                 output(yearIncome),
-                output(yearTax),
+                output(ordinaryIncome),
+                output(capitalGains),
+                output(yearSocialSecurityGross),
+                output(taxableSS),
+                output(tax.ordinaryTax()),
+                output(tax.capitalGainsTax()),
+                output(tax.totalTax()),
                 scaled(inflationFactor)));
 
         // Reset year-deltas; advance inflation for the next year.
         yearContributions = scaled(BigDecimal.ZERO);
         yearWithdrawals = scaled(BigDecimal.ZERO);
-        yearIncome = scaled(BigDecimal.ZERO);
+        yearIncomeNonSS = scaled(BigDecimal.ZERO);
+        yearSocialSecurityGross = scaled(BigDecimal.ZERO);
+        yearOrdinaryFromWithdrawals = scaled(BigDecimal.ZERO);
+        yearCapitalGainsFromWithdrawals = scaled(BigDecimal.ZERO);
         inflationFactor = scaled(inflationFactor.multiply(BigDecimal.ONE.add(inflationRate), MC));
       }
 
@@ -287,6 +420,18 @@ public class SimulationEngine {
     }
 
     return rows;
+  }
+
+  private static WithdrawalAllocator buildAllocator(SimulationAssumptions assumptions) {
+    WithdrawalOrderingStrategy strategy = assumptions.getWithdrawalOrderingStrategy();
+    if (strategy == null) {
+      strategy = WithdrawalOrderingStrategy.PROPORTIONAL;
+    }
+    return switch (strategy) {
+      case PROPORTIONAL -> new ProportionalAllocator();
+      case TAX_OPTIMIZED -> new TaxOptimizedAllocator();
+      case CUSTOM -> new CustomAllocator(assumptions.getCustomWithdrawalOrder());
+    };
   }
 
   private BigDecimal computeMonthlyWithdrawal(
@@ -402,16 +547,6 @@ public class SimulationEngine {
   /**
    * Project the SSA earnings-test reduction for the calendar year starting at {@code yearStart}.
    * Returns the dollar amount of SS to withhold across the year, capped at the year's projected SS.
-   *
-   * <p>Three regimes:
-   *
-   * <ul>
-   *   <li>FRA month is at-or-before {@code yearStart}: no test, returns zero.
-   *   <li>FRA month falls within this year ("year of FRA"): only earned income from months before
-   *       FRA month counts, against the higher year-of-FRA threshold, at $1 withheld per $3 over.
-   *   <li>FRA month is after this year ("under FRA all year"): full year's earned income against
-   *       the under-FRA threshold, at $1 per $2 over.
-   * </ul>
    */
   private BigDecimal projectAnnualEarningsTestReduction(
       List<IncomeSource> sources,
@@ -422,8 +557,7 @@ public class SimulationEngine {
     if (!yearStart.isBefore(fraMonth)) {
       return BigDecimal.ZERO;
     }
-    LocalDate calendarYearEnd =
-        LocalDate.of(yearStart.getYear(), 12, 1); // first of December (still 1st of month)
+    LocalDate calendarYearEnd = LocalDate.of(yearStart.getYear(), 12, 1);
     LocalDate yearWindowEnd = !calendarYearEnd.isAfter(deathDate) ? calendarYearEnd : deathDate;
 
     boolean yearOfFra = !fraMonth.isAfter(yearWindowEnd) && !fraMonth.isBefore(yearStart);
@@ -434,10 +568,8 @@ public class SimulationEngine {
     if (yearOfFra) {
       threshold = YEAR_OF_FRA_EARNINGS_THRESHOLD.multiply(inflationFactor, MC);
       ratio = YEAR_OF_FRA_REDUCTION_RATIO;
-      // Earnings before the FRA month count; FRA month and after don't.
       earnedWindowEnd = fraMonth.minusMonths(1);
       if (earnedWindowEnd.isBefore(yearStart)) {
-        // FRA falls in or before yearStart's month — no earnings window
         return BigDecimal.ZERO;
       }
     } else {
@@ -489,20 +621,6 @@ public class SimulationEngine {
 
   private static long monthsRemaining(LocalDate fromMonth, LocalDate deathDate) {
     return ChronoUnit.MONTHS.between(fromMonth, deathDate.withDayOfMonth(1)) + 1;
-  }
-
-  /** Distribute a withdrawal across positive-balance accounts in proportion to their balance. */
-  private void distributeWithdrawal(List<BigDecimal> balances, BigDecimal totalWithdrawal) {
-    BigDecimal totalBalance = sum(balances);
-    if (totalBalance.signum() <= 0) return;
-
-    for (int i = 0; i < balances.size(); i++) {
-      BigDecimal balance = balances.get(i);
-      if (balance.signum() <= 0) continue;
-      BigDecimal proportion = balance.divide(totalBalance, MC);
-      BigDecimal share = totalWithdrawal.multiply(proportion, MC).min(balance);
-      balances.set(i, scaled(balance.subtract(share, MC)));
-    }
   }
 
   private static BigDecimal sum(List<BigDecimal> values) {
