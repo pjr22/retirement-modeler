@@ -23,6 +23,8 @@ export type IncomeType =
 
 export type WithdrawalStrategy = "PORTFOLIO_PERCENTAGE" | "CASHFLOW_TARGET";
 
+export type WithdrawalOrderingStrategy = "PROPORTIONAL" | "TAX_OPTIMIZED" | "CUSTOM";
+
 export interface IncomeSource {
   id: string;
   scenarioId: string;
@@ -60,7 +62,8 @@ export interface SimulationAssumptions {
   withdrawalMonthlyAmount: number | null;
   standardDeviation: number;
   monteCarloTrials: number;
-  flatTaxRate: number;
+  withdrawalOrderingStrategy: WithdrawalOrderingStrategy;
+  customWithdrawalOrder: AccountType[];
 }
 
 export interface Scenario {
@@ -80,6 +83,12 @@ export interface YearlyProjection {
   yearWithdrawals: number;
   yearIncome: number;
   yearTax: number;
+  yearOrdinaryIncome: number;
+  yearCapitalGains: number;
+  yearSocialSecurityBenefit: number;
+  yearTaxableSocialSecurity: number;
+  yearOrdinaryTax: number;
+  yearCapitalGainsTax: number;
   inflationFactor: number;
 }
 

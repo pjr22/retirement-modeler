@@ -42,6 +42,7 @@ vi.mock("../api", () => ({
 
 import {
   getScenario,
+  getUserProfile,
   listAccounts,
   listIncomeSources,
   createIncomeSource,
@@ -50,6 +51,15 @@ import {
   updateScenario,
   runSimulation,
 } from "../api";
+
+const sampleProfile = {
+  id: "prof-1",
+  name: "Test Profile",
+  dateOfBirth: "1965-01-01",
+  plannedRetirementDate: "2030-01-01",
+  lifeExpectancy: 90,
+  filingStatus: "MARRIED_FILING_JOINTLY" as const,
+};
 
 const sampleScenario = {
   id: "scen-1",
@@ -65,7 +75,8 @@ const sampleScenario = {
     withdrawalMonthlyAmount: null,
     standardDeviation: 0.12,
     monteCarloTrials: 1000,
-    flatTaxRate: 0.22,
+    withdrawalOrderingStrategy: "PROPORTIONAL" as const,
+    customWithdrawalOrder: [],
   },
 };
 
@@ -103,6 +114,7 @@ describe("ScenarioDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([]));
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
   });
 
   it("loads and displays an existing scenario", async () => {
@@ -288,6 +300,75 @@ describe("ScenarioDetailPage", () => {
         "prof-1",
         expect.objectContaining({ name: "Test Scenario" }),
       );
+    });
+  });
+
+  it("renders the Withdrawal Ordering dropdown and the filing-status hint", async () => {
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Withdrawal Ordering")).toBeInTheDocument();
+    });
+
+    // Default ordering is PROPORTIONAL — the dropdown shows its label.
+    expect(screen.getByRole("combobox", { name: /ordering strategy/i })).toHaveTextContent(
+      /Proportional/,
+    );
+    // Custom-order picker is hidden when strategy != CUSTOM.
+    expect(screen.queryByText(/Draw Order/)).not.toBeInTheDocument();
+    // Filing-status hint reflects the loaded profile.
+    expect(screen.getByText(/Married Filing Jointly/)).toBeInTheDocument();
+  });
+
+  it("shows the custom-order picker when CUSTOM is selected and reorders with arrow buttons", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Withdrawal Ordering")).toBeInTheDocument();
+    });
+
+    // Open the ordering dropdown and pick Custom Order.
+    await user.click(screen.getByRole("combobox", { name: /ordering strategy/i }));
+    await user.click(screen.getByRole("option", { name: /Custom Order/ }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Draw Order/)).toBeInTheDocument();
+    });
+
+    // Picker is prefilled with all 7 account types in TAX_OPTIMIZED-like default order.
+    const orderRows = screen
+      .getAllByRole("row")
+      .filter((r) => within(r).queryByText(/TAXABLE|SAVINGS|TRADITIONAL|ROTH|HSA/));
+    expect(orderRows).toHaveLength(7);
+    expect(within(orderRows[0]).getByText(/TAXABLE BROKERAGE/)).toBeInTheDocument();
+    expect(within(orderRows[1]).getByText(/SAVINGS/)).toBeInTheDocument();
+
+    // Move SAVINGS up — it should swap with TAXABLE BROKERAGE.
+    const savingsRow = orderRows[1];
+    const upButton = within(savingsRow)
+      .getAllByRole("button")
+      .find((b) => b.querySelector('[data-testid="ArrowUpwardIcon"]'));
+    await user.click(upButton!);
+
+    await waitFor(() => {
+      const newRows = screen
+        .getAllByRole("row")
+        .filter((r) => within(r).queryByText(/TAXABLE|SAVINGS|TRADITIONAL|ROTH|HSA/));
+      expect(within(newRows[0]).getByText(/SAVINGS/)).toBeInTheDocument();
+      expect(within(newRows[1]).getByText(/TAXABLE BROKERAGE/)).toBeInTheDocument();
     });
   });
 

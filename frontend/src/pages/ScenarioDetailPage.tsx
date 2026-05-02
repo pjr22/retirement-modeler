@@ -28,6 +28,8 @@ import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import {
   getScenario,
   createScenario,
@@ -38,12 +40,16 @@ import {
   updateIncomeSource,
   deleteIncomeSource,
   runSimulation,
+  getUserProfile,
 } from "../api";
 import type {
   Account,
+  AccountType,
   IncomeSource,
   IncomeType,
   SimulationAssumptions,
+  UserProfile,
+  WithdrawalOrderingStrategy,
   WithdrawalStrategy,
 } from "../types";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -65,6 +71,51 @@ const WITHDRAWAL_STRATEGIES: {
       "Target monthly spend. Income (pension, SS, etc.) is applied first; savings cover the gap.",
   },
 ];
+
+const ORDERING_STRATEGIES: {
+  value: WithdrawalOrderingStrategy;
+  label: string;
+  helperText: string;
+}[] = [
+  {
+    value: "PROPORTIONAL",
+    label: "Proportional",
+    helperText:
+      "Split each withdrawal across all positive-balance accounts in proportion to their balance.",
+  },
+  {
+    value: "TAX_OPTIMIZED",
+    label: "Tax-Optimized",
+    helperText:
+      "Drain in tiers: taxable (brokerage, savings) → tax-deferred (Traditional) → tax-free (Roth, HSA).",
+  },
+  {
+    value: "CUSTOM",
+    label: "Custom Order",
+    helperText: "Specify the exact draw order. Account types not listed are drawn last.",
+  },
+];
+
+// All AccountTypes, in the order used as the default when first switching to CUSTOM
+// (mirrors TAX_OPTIMIZED tier order).
+const ALL_ACCOUNT_TYPES: AccountType[] = [
+  "TAXABLE_BROKERAGE",
+  "SAVINGS",
+  "TRADITIONAL_401K",
+  "TRADITIONAL_IRA",
+  "ROTH_401K",
+  "ROTH_IRA",
+  "HSA",
+];
+
+const accountTypeLabel = (t: AccountType) => t.replace(/_/g, " ");
+
+const FILING_STATUS_LABELS: Record<UserProfile["filingStatus"], string> = {
+  SINGLE: "Single",
+  MARRIED_FILING_JOINTLY: "Married Filing Jointly",
+  MARRIED_FILING_SEPARATELY: "Married Filing Separately",
+  HEAD_OF_HOUSEHOLD: "Head of Household",
+};
 
 const INCOME_TYPES: { value: IncomeType; label: string; helperText: string }[] = [
   {
@@ -119,7 +170,8 @@ const defaultAssumptions: SimulationAssumptions = {
   withdrawalMonthlyAmount: null,
   standardDeviation: 0.15,
   monteCarloTrials: 1000,
-  flatTaxRate: 0.22,
+  withdrawalOrderingStrategy: "PROPORTIONAL",
+  customWithdrawalOrder: [],
 };
 
 export default function ScenarioDetailPage() {
@@ -131,6 +183,7 @@ export default function ScenarioDetailPage() {
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState("");
   const [runningSim, setRunningSim] = useState(false);
   const [form, setForm] = useState({
@@ -165,8 +218,12 @@ export default function ScenarioDetailPage() {
         accountIds: s.accountIds,
         assumptions: s.assumptions,
       });
-      const accRes = await listAccounts(s.userProfileId);
+      const [accRes, profileRes] = await Promise.all([
+        listAccounts(s.userProfileId),
+        getUserProfile(s.userProfileId),
+      ]);
       setAccounts(accRes.data);
+      setProfile(profileRes.data);
       await loadIncomeSources(scenarioId);
     } catch {
       setError("Failed to load scenario");
@@ -175,11 +232,12 @@ export default function ScenarioDetailPage() {
 
   useEffect(() => {
     if (isNew && profileId) {
-      listAccounts(profileId)
-        .then((res) => {
-          setAccounts(res.data);
+      Promise.all([listAccounts(profileId), getUserProfile(profileId)])
+        .then(([accRes, profileRes]) => {
+          setAccounts(accRes.data);
+          setProfile(profileRes.data);
           // For new scenarios, default to all accounts selected.
-          setForm((prev) => ({ ...prev, accountIds: res.data.map((a) => a.id) }));
+          setForm((prev) => ({ ...prev, accountIds: accRes.data.map((a) => a.id) }));
         })
         .catch(() => {});
     } else if (scenarioId) {
@@ -226,6 +284,37 @@ export default function ScenarioDetailPage() {
 
   const updateAssumptions = (patch: Partial<SimulationAssumptions>) => {
     setForm((prev) => ({ ...prev, assumptions: { ...prev.assumptions, ...patch } }));
+  };
+
+  // When switching to CUSTOM, prefill the order with all account types if it's empty
+  // so the user has something to reorder rather than a blank list.
+  const handleOrderingStrategyChange = (next: WithdrawalOrderingStrategy) => {
+    setForm((prev) => {
+      const currentOrder = prev.assumptions.customWithdrawalOrder;
+      const nextOrder =
+        next === "CUSTOM" && currentOrder.length === 0 ? [...ALL_ACCOUNT_TYPES] : currentOrder;
+      return {
+        ...prev,
+        assumptions: {
+          ...prev.assumptions,
+          withdrawalOrderingStrategy: next,
+          customWithdrawalOrder: nextOrder,
+        },
+      };
+    });
+  };
+
+  const moveCustomOrderItem = (index: number, direction: -1 | 1) => {
+    setForm((prev) => {
+      const order = [...prev.assumptions.customWithdrawalOrder];
+      const target = index + direction;
+      if (target < 0 || target >= order.length) return prev;
+      [order[index], order[target]] = [order[target], order[index]];
+      return {
+        ...prev,
+        assumptions: { ...prev.assumptions, customWithdrawalOrder: order },
+      };
+    });
   };
 
   const handleRunSimulation = async () => {
@@ -479,16 +568,6 @@ export default function ScenarioDetailPage() {
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
             <TextField
-              label="Flat Tax Rate"
-              type="number"
-              value={form.assumptions.flatTaxRate}
-              onChange={(e) => updateAssumptions({ flatTaxRate: Number(e.target.value) })}
-              fullWidth
-              helperText="e.g. 0.22 for 22%"
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <TextField
               label="Withdrawal Strategy"
               select
               value={form.assumptions.withdrawalStrategy}
@@ -564,7 +643,87 @@ export default function ScenarioDetailPage() {
               fullWidth
             />
           </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Typography variant="body2" color="text.secondary">
+              Federal tax is computed from{" "}
+              <strong>{profile ? FILING_STATUS_LABELS[profile.filingStatus] : "—"}</strong> brackets.
+              Filing status lives on the profile —{" "}
+              {profile ? (
+                <a href={`/profiles/${profile.id}`}>change it there</a>
+              ) : (
+                "change it on the profile page"
+              )}
+              .
+            </Typography>
+          </Grid>
         </Grid>
+      </Paper>
+
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Withdrawal Ordering
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          When savings have to cover a withdrawal, this controls which accounts are drained first.
+          Distinct from the Withdrawal Strategy above (which decides <em>how much</em> to withdraw).
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField
+              label="Ordering Strategy"
+              select
+              value={form.assumptions.withdrawalOrderingStrategy}
+              onChange={(e) =>
+                handleOrderingStrategyChange(e.target.value as WithdrawalOrderingStrategy)
+              }
+              fullWidth
+              helperText={
+                ORDERING_STRATEGIES.find(
+                  (os) => os.value === form.assumptions.withdrawalOrderingStrategy,
+                )?.helperText
+              }
+            >
+              {ORDERING_STRATEGIES.map((os) => (
+                <MenuItem key={os.value} value={os.value}>
+                  {os.label}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Grid>
+        </Grid>
+        {form.assumptions.withdrawalOrderingStrategy === "CUSTOM" && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Draw Order (top is drained first)
+            </Typography>
+            <Table size="small" sx={{ maxWidth: 480 }}>
+              <TableBody>
+                {form.assumptions.customWithdrawalOrder.map((acctType, idx) => (
+                  <TableRow key={acctType}>
+                    <TableCell sx={{ width: 40 }}>{idx + 1}.</TableCell>
+                    <TableCell>{accountTypeLabel(acctType)}</TableCell>
+                    <TableCell align="right" sx={{ width: 96 }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveCustomOrderItem(idx, -1)}
+                        disabled={idx === 0}
+                      >
+                        <ArrowUpwardIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveCustomOrderItem(idx, 1)}
+                        disabled={idx === form.assumptions.customWithdrawalOrder.length - 1}
+                      >
+                        <ArrowDownwardIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        )}
       </Paper>
 
       <Dialog

@@ -36,7 +36,16 @@ vi.mock("../api", () => ({
   login: vi.fn(),
 }));
 
-import { getSimulation, getScenario } from "../api";
+import { getSimulation, getScenario, getUserProfile } from "../api";
+
+const sampleProfile = {
+  id: "prof-1",
+  name: "Test Profile",
+  dateOfBirth: "1990-01-01",
+  plannedRetirementDate: "2055-01-01",
+  lifeExpectancy: 90,
+  filingStatus: "MARRIED_FILING_JOINTLY" as const,
+};
 
 const sampleScenario = {
   id: "scen-1",
@@ -52,7 +61,8 @@ const sampleScenario = {
     withdrawalMonthlyAmount: null,
     standardDeviation: 0.15,
     monteCarloTrials: 10,
-    flatTaxRate: 0.22,
+    withdrawalOrderingStrategy: "PROPORTIONAL" as const,
+    customWithdrawalOrder: [],
   },
 };
 
@@ -70,6 +80,12 @@ const sampleSimulation = {
       yearWithdrawals: 0,
       yearIncome: 0,
       yearTax: 0,
+      yearOrdinaryIncome: 0,
+      yearCapitalGains: 0,
+      yearSocialSecurityBenefit: 0,
+      yearTaxableSocialSecurity: 0,
+      yearOrdinaryTax: 0,
+      yearCapitalGainsTax: 0,
       inflationFactor: 1,
     },
     {
@@ -80,6 +96,12 @@ const sampleSimulation = {
       yearWithdrawals: 0,
       yearIncome: 0,
       yearTax: 0,
+      yearOrdinaryIncome: 0,
+      yearCapitalGains: 0,
+      yearSocialSecurityBenefit: 0,
+      yearTaxableSocialSecurity: 0,
+      yearOrdinaryTax: 0,
+      yearCapitalGainsTax: 0,
       inflationFactor: 2.3,
     },
     {
@@ -90,6 +112,12 @@ const sampleSimulation = {
       yearWithdrawals: 1200000,
       yearIncome: 0,
       yearTax: 264000,
+      yearOrdinaryIncome: 800000,
+      yearCapitalGains: 400000,
+      yearSocialSecurityBenefit: 0,
+      yearTaxableSocialSecurity: 0,
+      yearOrdinaryTax: 200000,
+      yearCapitalGainsTax: 64000,
       inflationFactor: 4.5,
     },
   ],
@@ -108,6 +136,7 @@ const sampleSimulation = {
 describe("SimulationResultsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
   });
 
   it("loads and shows deterministic series stats by default", async () => {
@@ -192,6 +221,72 @@ describe("SimulationResultsPage", () => {
     });
 
     await user.click(screen.getByText("Hide Table"));
+  });
+
+  it("displays the Lifetime Tax stat card from summed yearTax", async () => {
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Lifetime Tax")).toBeInTheDocument();
+    });
+    // Lifetime tax for the deterministic series is 0 + 0 + 264000 = $264,000.
+    expect(screen.getByText("$264,000")).toBeInTheDocument();
+  });
+
+  it("shows separate Ordinary Tax and Capital Gains Tax columns in the year-by-year table", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Show Table")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Show Table"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("columnheader", { name: /Ordinary Tax/ })).toBeInTheDocument();
+      expect(screen.getByRole("columnheader", { name: /Capital Gains Tax/ })).toBeInTheDocument();
+    });
+    // Row at age 90: ordinary tax $200,000, cap gains tax $64,000 (sourced directly).
+    expect(screen.getByText("$200,000")).toBeInTheDocument();
+    expect(screen.getByText("$64,000")).toBeInTheDocument();
+  });
+
+  it("shows Filing Status and Withdrawal Ordering rows in the assumptions table", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Scenario Parameters")).toBeInTheDocument();
+    });
+
+    const showButtons = screen.getAllByRole("button", { name: /^show$/i });
+    await user.click(showButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Filing Status")).toBeInTheDocument();
+      expect(screen.getByText("Withdrawal Ordering")).toBeInTheDocument();
+      expect(screen.getByText(/Married Filing Jointly/)).toBeInTheDocument();
+    });
+    // Old "Flat Tax Rate" row is gone.
+    expect(screen.queryByText("Flat Tax Rate")).not.toBeInTheDocument();
   });
 
   it("renders Scenario Parameters section with MC trial count", async () => {

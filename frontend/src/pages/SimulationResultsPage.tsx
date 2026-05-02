@@ -30,9 +30,18 @@ import {
   ResponsiveContainer,
   Line,
   LineChart,
+  BarChart,
+  Bar,
+  Legend,
 } from "recharts";
-import { getSimulation, getScenario } from "../api";
-import type { SimulationResult, Scenario } from "../types";
+import { getSimulation, getScenario, getUserProfile } from "../api";
+import type {
+  SimulationResult,
+  Scenario,
+  UserProfile,
+  YearlyProjection,
+  WithdrawalOrderingStrategy,
+} from "../types";
 import { formatMonthYear } from "../utils";
 
 type SeriesKey = "Deterministic" | "Median" | "p10" | "p25" | "p75" | "p90";
@@ -93,9 +102,54 @@ const formatCurrency = (val: number) =>
 
 const formatPercent = (val: number, digits = 1) => `${(val * 100).toFixed(digits)}%`;
 
+const FILING_STATUS_LABELS: Record<UserProfile["filingStatus"], string> = {
+  SINGLE: "Single",
+  MARRIED_FILING_JOINTLY: "Married Filing Jointly",
+  MARRIED_FILING_SEPARATELY: "Married Filing Separately",
+  HEAD_OF_HOUSEHOLD: "Head of Household",
+};
+
+const ORDERING_STRATEGY_LABELS: Record<WithdrawalOrderingStrategy, string> = {
+  PROPORTIONAL: "Proportional",
+  TAX_OPTIMIZED: "Tax-Optimized",
+  CUSTOM: "Custom",
+};
+
 interface SeriesPoint {
   age: number;
   value: number;
+}
+
+// Per-row tax breakdown: deterministic uses the engine's authoritative bracket-based figures.
+// Non-deterministic series scale the deterministic row's total tax by the ratio of the series'
+// (income + savings withdrawal) to the deterministic row's, then split that scaled total by the
+// deterministic row's ordinary/capital-gains proportion. Approximation — we don't re-run the
+// bracket pipeline per Monte Carlo trial — but consistent with the rest of the non-deterministic
+// table presentation.
+function computeRowTax(
+  row: YearlyProjection,
+  isDeterministic: boolean,
+  seriesIncomePlusWithdrawals: number,
+): { ordinaryTax: number; capitalGainsTax: number; totalTax: number } {
+  if (isDeterministic) {
+    return {
+      ordinaryTax: row.yearOrdinaryTax,
+      capitalGainsTax: row.yearCapitalGainsTax,
+      totalTax: row.yearTax,
+    };
+  }
+  const detBase = row.yearIncome + row.yearWithdrawals;
+  const effectiveRate = detBase > 0 ? row.yearTax / detBase : 0;
+  const totalTax = seriesIncomePlusWithdrawals * effectiveRate;
+  if (row.yearTax <= 0) {
+    return { ordinaryTax: 0, capitalGainsTax: 0, totalTax: 0 };
+  }
+  const ordinaryShare = row.yearOrdinaryTax / row.yearTax;
+  return {
+    ordinaryTax: totalTax * ordinaryShare,
+    capitalGainsTax: totalTax * (1 - ordinaryShare),
+    totalTax,
+  };
 }
 
 export default function SimulationResultsPage() {
@@ -103,8 +157,10 @@ export default function SimulationResultsPage() {
   const navigate = useNavigate();
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState("");
   const [showTable, setShowTable] = useState(false);
+  const [showTaxBreakdown, setShowTaxBreakdown] = useState(false);
   const [showParams, setShowParams] = useState(false);
   const [selectedKey, setSelectedKey] = useState<SeriesKey>("Deterministic");
 
@@ -115,6 +171,8 @@ export default function SimulationResultsPage() {
       setResult(simRes.data);
       const scenRes = await getScenario(simRes.data.scenarioId);
       setScenario(scenRes.data);
+      const profileRes = await getUserProfile(scenRes.data.userProfileId);
+      setProfile(profileRes.data);
     } catch {
       setError("Failed to load simulation results");
     }
@@ -153,6 +211,84 @@ export default function SimulationResultsPage() {
       yearsToDepletion: survives ? null : depletionIdx,
     };
   }, [seriesPoints]);
+
+  // Per-row aggregate: balance, contributions, income, withdrawals, and split tax. Used by
+  // both the year-by-year table and the tax-breakdown chart so they stay in sync.
+  interface RowAggregate {
+    row: YearlyProjection;
+    seriesValue: number;
+    contributions: number;
+    income: number;
+    withdrawals: number;
+    ordinaryTax: number;
+    capitalGainsTax: number;
+    totalTax: number;
+  }
+
+  const rowAggregates: RowAggregate[] = useMemo(() => {
+    if (!result) return [];
+    const isDeterministic = selectedKey === "Deterministic";
+    return result.deterministicProjection.map((row, idx) => {
+      const seriesValue = isDeterministic
+        ? row.balance
+        : (seriesPoints[idx]?.value ?? 0);
+      const previousSeriesValue =
+        idx > 0
+          ? isDeterministic
+            ? result.deterministicProjection[idx - 1].balance
+            : (seriesPoints[idx - 1]?.value ?? 0)
+          : 0;
+      const contributions = row.yearContributions;
+      const income = row.yearIncome;
+
+      let withdrawals: number;
+      if (isDeterministic) {
+        withdrawals = row.yearWithdrawals;
+      } else if (row.yearWithdrawals === 0) {
+        withdrawals = 0;
+      } else {
+        let requested: number;
+        if (scenario?.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE") {
+          requested = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
+        } else {
+          const monthlyTarget = scenario?.assumptions.withdrawalMonthlyAmount ?? 0;
+          const annualTarget = monthlyTarget * 12 * row.inflationFactor;
+          requested = Math.max(0, annualTarget - income);
+        }
+        const availableSavings = Math.max(0, previousSeriesValue + contributions);
+        withdrawals = Math.min(requested, availableSavings);
+      }
+
+      const taxes = computeRowTax(row, isDeterministic, income + withdrawals);
+
+      return {
+        row,
+        seriesValue,
+        contributions,
+        income,
+        withdrawals,
+        ordinaryTax: taxes.ordinaryTax,
+        capitalGainsTax: taxes.capitalGainsTax,
+        totalTax: taxes.totalTax,
+      };
+    });
+  }, [result, scenario, selectedKey, seriesPoints]);
+
+  const lifetimeTax = useMemo(
+    () => rowAggregates.reduce((sum, agg) => sum + agg.totalTax, 0),
+    [rowAggregates],
+  );
+
+  // Tax-breakdown chart data: year-by-year ordinary + capital-gains tax for the selected series.
+  const taxChartData = useMemo(
+    () =>
+      rowAggregates.map((agg) => ({
+        age: agg.row.age,
+        ordinaryTax: Math.round(agg.ordinaryTax),
+        capitalGainsTax: Math.round(agg.capitalGainsTax),
+      })),
+    [rowAggregates],
+  );
 
   if (!result) {
     return error ? (
@@ -234,7 +370,7 @@ export default function SimulationResultsPage() {
 
       {metrics && (
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid size={{ xs: 12, sm: 4 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <MuiTooltip
               title={`The portfolio balance at age ${metrics.finalAge} (life expectancy) for the "${selectedSeries.label}" projection.`}
               arrow
@@ -252,7 +388,7 @@ export default function SimulationResultsPage() {
               </Paper>
             </MuiTooltip>
           </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <MuiTooltip
               title={`Years from today until the "${selectedSeries.label}" balance first reaches zero. "Never" means the projection survives all the way to life expectancy.`}
               arrow
@@ -270,7 +406,7 @@ export default function SimulationResultsPage() {
               </Paper>
             </MuiTooltip>
           </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <MuiTooltip
               title={`Whether the "${selectedSeries.label}" projection ends with a positive balance at life expectancy. The "Overall MC success" badge above is a separate, aggregate statistic across all ${trials} trials.`}
               arrow
@@ -285,6 +421,19 @@ export default function SimulationResultsPage() {
                 >
                   {metrics.survives ? "Survives" : `Depleted at ${metrics.depletionAge}`}
                 </Typography>
+              </Paper>
+            </MuiTooltip>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <MuiTooltip
+              title={`Total federal tax paid across all projection years for the "${selectedSeries.label}" series. Sum of ordinary income tax + long-term capital gains tax + tax on the taxable portion of Social Security.`}
+              arrow
+            >
+              <Paper sx={{ p: 2, textAlign: "center", cursor: "help" }}>
+                <Typography variant="overline" color="text.secondary">
+                  Lifetime Tax
+                </Typography>
+                <Typography variant="h4">{formatCurrency(lifetimeTax)}</Typography>
               </Paper>
             </MuiTooltip>
           </Grid>
@@ -357,78 +506,23 @@ export default function SimulationResultsPage() {
                 <TableCell align="right">Contributions</TableCell>
                 <TableCell align="right">Withdrawals</TableCell>
                 <TableCell align="right">Income</TableCell>
-                <TableCell align="right">Tax</TableCell>
+                <TableCell align="right">Ordinary Tax</TableCell>
+                <TableCell align="right">Capital Gains Tax</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {result.deterministicProjection.map((row, idx) => {
-                const seriesValue =
-                  selectedKey === "Deterministic"
-                    ? row.balance
-                    : (seriesPoints[idx]?.value ?? 0);
-
-                const previousSeriesValue =
-                  idx > 0
-                    ? selectedKey === "Deterministic"
-                      ? result.deterministicProjection[idx - 1].balance
-                      : (seriesPoints[idx - 1]?.value ?? 0)
-                    : 0;
-
-                // Contributions and income are series-independent (deterministic schedules).
-                const contributions = row.yearContributions;
-                const income = row.yearIncome;
-
-                // Withdrawals: deterministic uses the engine's value (income-first for
-                // CASHFLOW_TARGET, savings-only for PORTFOLIO_PERCENTAGE). For non-deterministic
-                // series we re-derive from the strategy + that series' balance, then cap at
-                // savings actually available (previous series balance + contributions). Income
-                // is paid directly to the user and never enters savings, so it's not part of
-                // the cap.
-                let withdrawals: number;
-                if (selectedKey === "Deterministic") {
-                  withdrawals = row.yearWithdrawals;
-                } else if (row.yearWithdrawals === 0) {
-                  withdrawals = 0;
-                } else {
-                  let requested: number;
-                  if (scenario?.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE") {
-                    requested = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
-                  } else {
-                    // CASHFLOW_TARGET: configured monthly target × 12 × inflation, less income
-                    // (savings only fill the gap).
-                    const monthlyTarget = scenario?.assumptions.withdrawalMonthlyAmount ?? 0;
-                    const annualTarget = monthlyTarget * 12 * row.inflationFactor;
-                    requested = Math.max(0, annualTarget - income);
-                  }
-                  const availableSavings = Math.max(0, previousSeriesValue + contributions);
-                  withdrawals = Math.min(requested, availableSavings);
-                }
-
-                // Tax: deterministic reads the engine's authoritative bracket-based figure.
-                // Non-deterministic series scale by an effective rate derived from the
-                // deterministic row, since we don't re-run the bracket computation per series.
-                // Phase 4.7 replaces this table with a proper tax-breakdown layout.
-                let tax: number;
-                if (selectedKey === "Deterministic") {
-                  tax = row.yearTax;
-                } else {
-                  const detBase = row.yearIncome + row.yearWithdrawals;
-                  const effectiveRate = detBase > 0 ? row.yearTax / detBase : 0;
-                  tax = (income + withdrawals) * effectiveRate;
-                }
-
-                return (
-                  <TableRow key={row.date}>
-                    <TableCell>{formatMonthYear(row.date)}</TableCell>
-                    <TableCell>{row.age}</TableCell>
-                    <TableCell align="right">{formatCurrency(seriesValue)}</TableCell>
-                    <TableCell align="right">{formatCurrency(contributions)}</TableCell>
-                    <TableCell align="right">{formatCurrency(withdrawals)}</TableCell>
-                    <TableCell align="right">{formatCurrency(income)}</TableCell>
-                    <TableCell align="right">{formatCurrency(tax)}</TableCell>
-                  </TableRow>
-                );
-              })}
+              {rowAggregates.map((agg) => (
+                <TableRow key={agg.row.date}>
+                  <TableCell>{formatMonthYear(agg.row.date)}</TableCell>
+                  <TableCell>{agg.row.age}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.seriesValue)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.contributions)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.withdrawals)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.income)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.ordinaryTax)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.capitalGainsTax)}</TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
           {selectedKey !== "Deterministic" && scenario && (
@@ -444,10 +538,66 @@ export default function SimulationResultsPage() {
               Carlo trials.
               <br />
               {scenario.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE"
-                ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals. Tax is approximated from the deterministic row's effective rate × (withdrawals + income)."
-                : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero. Tax is approximated from the deterministic row's effective rate × (withdrawals + income)."}
+                ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals."
+                : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero."}
+              <br />
+              Tax columns scale the deterministic row's bracket-based total by the series'
+              (income + withdrawals), then split using the deterministic row's ordinary /
+              capital-gains proportion.
             </Typography>
           )}
+        </Collapse>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Tax Breakdown by Year — {selectedSeries.label}
+          </Typography>
+          <Button
+            onClick={() => setShowTaxBreakdown(!showTaxBreakdown)}
+            endIcon={showTaxBreakdown ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+          >
+            {showTaxBreakdown ? "Hide" : "Show"} Chart
+          </Button>
+        </Box>
+        <Collapse in={showTaxBreakdown}>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={taxChartData} margin={{ top: 10, right: 30, left: 30, bottom: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="age"
+                label={{ value: "Age", position: "insideBottom", offset: -10 }}
+              />
+              <YAxis
+                tickFormatter={(v: number) => `$${(v / 1000).toFixed(0)}k`}
+                label={{
+                  value: "Tax",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: -15,
+                  style: { textAnchor: "middle" },
+                }}
+                width={80}
+              />
+              <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+              <Legend />
+              <Bar
+                dataKey="ordinaryTax"
+                stackId="tax"
+                name="Ordinary Tax"
+                fill="#1565c0"
+                isAnimationActive={false}
+              />
+              <Bar
+                dataKey="capitalGainsTax"
+                stackId="tax"
+                name="Capital Gains Tax"
+                fill="#43a047"
+                isAnimationActive={false}
+              />
+            </BarChart>
+          </ResponsiveContainer>
         </Collapse>
       </Paper>
 
@@ -494,8 +644,39 @@ export default function SimulationResultsPage() {
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 500 }}>Flat Tax Rate</TableCell>
-                  <TableCell>{formatPercent(scenario.assumptions.flatTaxRate)}</TableCell>
+                  <TableCell sx={{ fontWeight: 500 }}>Filing Status</TableCell>
+                  <TableCell>
+                    {profile ? FILING_STATUS_LABELS[profile.filingStatus] : "—"}
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ ml: 1 }}
+                    >
+                      (federal brackets sourced from this)
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 500 }}>Withdrawal Ordering</TableCell>
+                  <TableCell>
+                    {ORDERING_STRATEGY_LABELS[scenario.assumptions.withdrawalOrderingStrategy]}
+                    {scenario.assumptions.withdrawalOrderingStrategy === "CUSTOM" &&
+                      scenario.assumptions.customWithdrawalOrder.length > 0 && (
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ ml: 1 }}
+                        >
+                          (
+                          {scenario.assumptions.customWithdrawalOrder
+                            .map((t) => t.replace(/_/g, " "))
+                            .join(" → ")}
+                          )
+                        </Typography>
+                      )}
+                  </TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 500 }}>Monte Carlo Trials</TableCell>

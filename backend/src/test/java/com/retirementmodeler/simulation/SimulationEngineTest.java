@@ -563,6 +563,89 @@ class SimulationEngineTest {
     assertThat(taxOrdinary).isEqualByComparingTo("0");
   }
 
+  /**
+   * Realistic Phase 4.8 scenario: MFJ retiree at FRA, $1M Traditional IRA + $500K Roth + $200K
+   * taxable brokerage + $30K/yr SS, 23-year horizon (age 67→90), no growth/inflation. Asserts the
+   * lifetime federal tax bill diverges by &gt;10% between PROPORTIONAL and TAX_OPTIMIZED. This is
+   * the "decision-grade" sanity check from the plan — proves the ordering selector actually moves
+   * the number that drives user decisions. (Direction is intentionally not asserted: TAX_OPTIMIZED
+   * isn't always lower — heavy traditional-only years after the brokerage tier empties can push
+   * more SS into the 85% taxable tier than a steady proportional split would have.)
+   */
+  @Test
+  void realisticMFJScenarioShowsMeaningfulTaxDifferenceBetweenOrderings() {
+    LocalDate dob = TODAY.minusYears(67);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 90;
+
+    List<Account> accounts =
+        List.of(
+            account(AccountType.TRADITIONAL_IRA, bd(1_000_000)),
+            account(AccountType.ROTH_IRA, bd(500_000)),
+            account(AccountType.TAXABLE_BROKERAGE, bd(200_000)));
+    IncomeSource ss = source("SS", IncomeType.SOCIAL_SECURITY, bd(2_500), TODAY, null, false);
+
+    SimulationAssumptions proportional =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.PROPORTIONAL,
+            null);
+    SimulationAssumptions taxOptimized =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.TAX_OPTIMIZED,
+            null);
+
+    BigDecimal propTax =
+        engine
+            .projectDeterministic(
+                accounts,
+                List.of(ss),
+                proportional,
+                FilingStatus.MARRIED_FILING_JOINTLY,
+                dob,
+                retire,
+                lifeExpectancyAge)
+            .stream()
+            .map(YearlyProjection::yearTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal taxOptTax =
+        engine
+            .projectDeterministic(
+                accounts,
+                List.of(ss),
+                taxOptimized,
+                FilingStatus.MARRIED_FILING_JOINTLY,
+                dob,
+                retire,
+                lifeExpectancyAge)
+            .stream()
+            .map(YearlyProjection::yearTax)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // Both strategies should produce a positive lifetime tax bill on this scenario.
+    assertThat(propTax).isPositive();
+    assertThat(taxOptTax).isPositive();
+
+    // |diff| / max > 10%
+    BigDecimal diff = propTax.subtract(taxOptTax).abs();
+    BigDecimal max = propTax.max(taxOptTax);
+    BigDecimal relativeDiff = diff.divide(max, 6, java.math.RoundingMode.HALF_UP);
+    assertThat(relativeDiff).isGreaterThan(new BigDecimal("0.10"));
+  }
+
   // ---- helpers ----
 
   private static SimulationAssumptions assumptions(

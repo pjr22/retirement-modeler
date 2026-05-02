@@ -6,11 +6,11 @@ A living plan. Update as work lands. `[x]` = done, `[ ]` = not done.
 
 ## Status
 
-**Last updated:** 2026-05-01
+**Last updated:** 2026-05-02
 
-**Current state:** Phases 0–3 + 3.5 + 3.6 complete. Phase 4 backend complete through 4.6 — federal bracket-based tax modeling, LTCG with stacking, IRS Pub. 915 SS taxability, three withdrawal-ordering strategies (PROPORTIONAL / TAX_OPTIMIZED / CUSTOM), engine integration, V007 migration, and round-trip API tests all green (127 backend tests). Frontend has a stopgap fix in `SimulationResultsPage` so the existing Tax column reads `row.yearTax` instead of the now-defunct `flatTaxRate × (income+withdrawals)` derivation. **Phase 4.7 (frontend rebuild — strategy picker, new tax columns, breakdown chart, lifetime-tax stat, drop flatTaxRate UI) is next.**
+**Current state:** Phases 0–4 complete. Phase 4 closed today: 4.7 frontend rebuild (strategy picker with up/down custom-order picker, split Ordinary/Capital-Gains tax columns, Tax-Breakdown stacked-bar chart, Lifetime Tax stat card, Filing-Status row, dropped `flatTaxRate` UI) and 4.8 test coverage (realistic MFJ integration test asserting >10% PROPORTIONAL-vs-TAX_OPTIMIZED tax differential, 5 new frontend tests, hand-calc verified against the running engine to the cent). Decision-grade tax gate reached: 128 backend tests + 35 frontend tests green.
 
-**Active work:** Phase 4.7 — frontend changes for the new tax model. See sub-plan below; HANDOFF.md has the open UI design questions.
+**Active work:** Between phases. Next is **Phase 5 (Scenario Comparison & Reporting)** — see Phase 5 section below. Most user-impactful feature in Phase 5 is RMDs (currently not modeled; mandatory for retirees at age 73+). Phase 4.8 verification incidentally confirmed the side-by-side scenario comparison feature is *more* valuable than originally estimated — TAX_OPTIMIZED is not always lower-tax than PROPORTIONAL (heavy traditional draws after the brokerage tier empties can push more SS into the 85% taxable tier), so the "right" ordering is genuinely scenario-dependent.
 
 **Deviations from original plan to keep in mind:**
 - Phase 1's "in-memory storage" interim was skipped — went straight to Postgres + JPA + Flyway.
@@ -196,7 +196,7 @@ Simulations:
 
 ---
 
-## Phase 4 — Enhanced Tax Modeling & Withdrawal Optimization 🚧 (4.1–4.6 done; 4.7 next)
+## Phase 4 — Enhanced Tax Modeling & Withdrawal Optimization ✅
 
 **Goal:** Replace the flat-rate tax model with federal marginal brackets, capital-gains rates, and Social Security taxation rules. Add tax-aware withdrawal ordering and surface the resulting tax breakdown to users.
 
@@ -261,24 +261,24 @@ Tax-aware withdrawal ordering can change a 30-year retirement's lifetime tax bil
 - [x] Added 3 round-trip tests in `ScenarioControllerTest`: TAX_OPTIMIZED creation, CUSTOM with `customWithdrawalOrder` list, default-to-PROPORTIONAL when client omits the field.
 - [x] **Bug caught and fixed**: Jackson uses no-arg constructor + setters when deserializing, so the public constructor's "default to PROPORTIONAL" never fired for API requests. Fixed by initializing the fields at declaration and having the setters null-coalesce.
 
-### Sub-phase 4.7 — Frontend changes (next session)
-- [ ] Scenario editor: add "Withdrawal Ordering" section with strategy dropdown. When `CUSTOM`, show an account-type ordering picker (drag-and-drop vs simple up/down arrows — open UI decision).
-- [ ] Remove the `flatTaxRate` input from the scenario form — it's now derived. Replace with a read-only "Filing status drives federal brackets" hint linking to the profile page.
-- [ ] Replace the assumptions-table "Flat Tax Rate" row with a filing-status row.
-- [ ] Update `frontend/src/types.ts`: drop `flatTaxRate` from `SimulationAssumptions`; add `withdrawalOrderingStrategy`, `customWithdrawalOrder`; extend `YearlyProjection` with the six new tax fields.
-- [ ] `SimulationResultsPage`:
-  - Replace the stopgap Tax column with separate Ordinary Tax + Capital Gains Tax columns (sourced from `row.yearOrdinaryTax` / `row.yearCapitalGainsTax`).
-  - Possibly add Ordinary Income + Capital Gains breakdown columns.
-  - New "Tax Breakdown" stacked-bar chart per year (ordinary + capital-gains tax).
-  - Stat card: lifetime tax paid.
-- [ ] Update frontend tests across `ScenarioDetailPage.test.tsx`, `ScenariosPage.test.tsx`, `SimulationResultsPage.test.tsx`, `ProfilesPage.test.tsx`, `ProfileDetailPage.test.tsx`, `AccountsPage.test.tsx` — anywhere that mocks API responses with `flatTaxRate`.
-- [ ] Manual browser test against running backend.
+### Sub-phase 4.7 — Frontend changes ✅
+- [x] Scenario editor: added "Withdrawal Ordering" section with strategy dropdown. When `CUSTOM`, shows an account-type ordering picker with up/down arrow buttons (chose simple arrows over drag-and-drop — fewer dependencies, fine for 7 fixed types). Auto-prefills the order with the TAX_OPTIMIZED tier sequence on first switch to CUSTOM so the user has something to reorder.
+- [x] Removed the `flatTaxRate` input. Replaced with a read-only "Federal tax computed from {filingStatus} brackets — change in profile" line linking to `/profiles/{id}`.
+- [x] Replaced the assumptions-table "Flat Tax Rate" row with a Filing Status row + a new Withdrawal Ordering row (shows the strategy and, for CUSTOM, the explicit account-type sequence).
+- [x] Updated `frontend/src/types.ts`: dropped `flatTaxRate`, added `withdrawalOrderingStrategy` + `customWithdrawalOrder` on `SimulationAssumptions`, extended `YearlyProjection` with the six new tax fields, added `WithdrawalOrderingStrategy` type.
+- [x] `SimulationResultsPage`:
+  - Replaced the stopgap Tax column with separate Ordinary Tax + Capital Gains Tax columns. Deterministic uses `row.yearOrdinaryTax` / `row.yearCapitalGainsTax` directly; non-deterministic series scale the deterministic total by the series' (income+withdrawals) and split using the deterministic ordinary/cap-gains proportion (extension of the existing stopgap, documented in the table footnote).
+  - Added a collapsible Tax Breakdown by Year stacked-bar chart (ordinary + capital-gains, defaults collapsed since the page is already long).
+  - Added a Lifetime Tax stat card as a fourth card alongside Final Balance / Years until Depletion / Outcome.
+  - Both pages now also fetch the `UserProfile` so the filing status is available for display.
+- [x] Updated frontend tests in `ScenarioDetailPage.test.tsx`, `ScenariosPage.test.tsx`, `SimulationResultsPage.test.tsx` — mock data shapes updated, `getUserProfile` mock added. (Note: `ProfilesPage.test.tsx`, `ProfileDetailPage.test.tsx`, `AccountsPage.test.tsx` listed in the original plan didn't actually reference `flatTaxRate` — verified via grep, no changes needed.)
+- [x] Manual browser test passed; user verified existing scenarios still load with backfilled `withdrawalOrderingStrategy = PROPORTIONAL` and that ordering choice now produces meaningfully different tax outcomes.
 
-### Sub-phase 4.8 — Test coverage and validation
-- [ ] Backend integration test: realistic scenario (e.g. $1M traditional IRA, $500K Roth, $200K taxable, MFJ, $30K SS) → verify total tax differs meaningfully (>10%) between PROPORTIONAL and TAX_OPTIMIZED.
+### Sub-phase 4.8 — Test coverage and validation ✅
+- [x] Backend integration test in `SimulationEngineTest`: realistic MFJ scenario ($1M Trad / $500K Roth / $200K brokerage, $30K/yr SS, 23-year horizon at FRA) asserting `|propTax − taxOptTax| / max > 10%`. Direction intentionally not asserted — TAX_OPTIMIZED isn't always lower in this scenario shape (heavy traditional-only years after the brokerage tier empties can push more SS into the 85% taxable tier than steady proportional draws).
 - [x] Backend unit tests for each tax component (4.1–4.4) listed above.
-- [ ] Frontend test for the new scenario editor section and results columns.
-- [ ] Manual sanity check: simulate, compare year-by-year output against a hand-calculated tax for one or two years.
+- [x] Frontend tests for the new editor section ("renders the Withdrawal Ordering dropdown and the filing-status hint", "shows the custom-order picker when CUSTOM is selected and reorders with arrow buttons") and results columns ("displays the Lifetime Tax stat card", "shows separate Ordinary Tax and Capital Gains Tax columns", "shows Filing Status and Withdrawal Ordering rows in the assumptions table").
+- [x] Manual hand-calc verification against the running engine via API: three scenarios (Trad-only PROPORTIONAL, Trad+Roth PROPORTIONAL, Trad+Roth TAX_OPTIMIZED). Bracket math + standard deduction + tier boundary at $12,400 confirmed exact to the cent in all three. Roth tax-freeness confirmed (Trad+Roth PROP produces identical ordinary income to Trad-only PROP despite a 50%-larger total withdrawal). Ordering effect quantified: TAX_OPTIMIZED produced 93% higher ordinary tax than PROPORTIONAL on the same Year-1 portfolio.
 
 ### Out of scope for Phase 4 (intentional)
 - State income tax (federal-only for now)
@@ -398,8 +398,8 @@ Not scheduled. Prioritized based on user feedback.
 | 1     | Domain Model & Core API                  | ✅ done                | —                     |
 | 2     | Simulation Engine                        | ✅ done                | —                     |
 | 3     | Persistence & User Management            | ✅ done (cleanup done) | —                     |
-| 4     | Enhanced Tax & Withdrawal Optimization   | 🚧 next                | 2–3 weeks             |
-| 5     | Scenario Comparison & Reporting          | ⏳ planned             | 2–3 weeks             |
+| 4     | Enhanced Tax & Withdrawal Optimization   | ✅ done                | —                     |
+| 5     | Scenario Comparison & Reporting          | ⏳ next                | 2–3 weeks             |
 | 6     | Production Readiness                     | ⏳ planned             | 2–3 weeks             |
 | 7+    | Future Enhancements                      | ♾  backlog             | ongoing               |
 
