@@ -12,6 +12,7 @@ vi.mock("../api", () => ({
   createUserProfile: vi.fn(),
   updateUserProfile: vi.fn(),
   deleteUserProfile: vi.fn(),
+  cloneUserProfile: vi.fn(),
   listAccounts: vi.fn(),
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
@@ -36,7 +37,12 @@ vi.mock("../api", () => ({
   login: vi.fn(),
 }));
 
-import { listUserProfiles, createUserProfile, deleteUserProfile } from "../api";
+import {
+  listUserProfiles,
+  createUserProfile,
+  deleteUserProfile,
+  cloneUserProfile,
+} from "../api";
 
 const sampleProfile = {
   id: "prof-1",
@@ -101,6 +107,48 @@ describe("ProfilesPage", () => {
         expect.objectContaining({
           name: "Bob",
           dateOfBirth: "1990-01-15",
+        }),
+      );
+    });
+  });
+
+  it("clones a profile via the prefilled clone dialog", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listUserProfiles).mockResolvedValue(axiosOk([sampleProfile]));
+    vi.mocked(cloneUserProfile).mockResolvedValue(
+      axiosOk({ ...sampleProfile, id: "prof-clone", name: "Copy of Alice" }),
+    );
+
+    renderWithRouter(<ProfilesPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+    });
+
+    const cloneBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.querySelector('[data-testid="ContentCopyIcon"]'));
+    expect(cloneBtn).toBeDefined();
+    await user.click(cloneBtn!);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Clone Profile")).toBeInTheDocument();
+    // Name field is prefilled with "Copy of {original}".
+    expect(within(dialog).getByDisplayValue("Copy of Alice")).toBeInTheDocument();
+
+    const submitBtn = within(dialog)
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Clone");
+    await user.click(submitBtn!);
+
+    await waitFor(() => {
+      expect(cloneUserProfile).toHaveBeenCalledWith(
+        "prof-1",
+        expect.objectContaining({
+          name: "Copy of Alice",
+          dateOfBirth: "1990-01-01",
+          plannedRetirementDate: "2055-01-01",
+          lifeExpectancy: 90,
+          filingStatus: "SINGLE",
         }),
       );
     });

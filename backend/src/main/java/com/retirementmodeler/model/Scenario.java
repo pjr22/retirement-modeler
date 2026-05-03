@@ -34,7 +34,7 @@ public class Scenario {
 
   @Embedded private SimulationAssumptions assumptions;
 
-  protected Scenario() {}
+  public Scenario() {}
 
   public UUID getId() {
     return id;

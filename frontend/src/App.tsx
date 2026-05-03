@@ -7,8 +7,6 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ProfilesPage from "./pages/ProfilesPage";
 import ProfileDetailPage from "./pages/ProfileDetailPage";
-import AccountsPage from "./pages/AccountsPage";
-import ScenariosPage from "./pages/ScenariosPage";
 import ScenarioDetailPage from "./pages/ScenarioDetailPage";
 import SimulationResultsPage from "./pages/SimulationResultsPage";
 
@@ -38,8 +36,6 @@ function App() {
             >
               <Route path="/" element={<ProfilesPage />} />
               <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
-              <Route path="/profiles/:profileId/accounts" element={<AccountsPage />} />
-              <Route path="/profiles/:profileId/scenarios" element={<ScenariosPage />} />
               <Route path="/scenarios/:scenarioId" element={<ScenarioDetailPage />} />
               <Route path="/simulations/:simulationId" element={<SimulationResultsPage />} />
             </Route>

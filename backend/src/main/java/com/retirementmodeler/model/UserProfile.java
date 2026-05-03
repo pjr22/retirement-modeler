@@ -35,7 +35,7 @@ public class UserProfile {
   @Enumerated(EnumType.STRING)
   private FilingStatus filingStatus;
 
-  protected UserProfile() {}
+  public UserProfile() {}
 
   public UUID getId() {
     return id;

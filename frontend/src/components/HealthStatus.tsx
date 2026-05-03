@@ -1,47 +1,45 @@
 import { useEffect, useState } from "react";
-import Chip from "@mui/material/Chip";
-import CheckCircleOutlineRoundedIcon from "@mui/icons-material/CheckCircleOutlineRounded";
-import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
-import api from "../api";
-
-interface HealthResponse {
-  status: string;
-  timestamp: string;
-}
+import Tooltip from "@mui/material/Tooltip";
+import Box from "@mui/material/Box";
+import CloudDoneRoundedIcon from "@mui/icons-material/CloudDoneRounded";
+import CloudOffRoundedIcon from "@mui/icons-material/CloudOffRounded";
+import CloudQueueRoundedIcon from "@mui/icons-material/CloudQueueRounded";
+import {
+  checkHealth,
+  subscribeToHealth,
+  type HealthState,
+} from "../healthMonitor";
 
 export default function HealthStatus() {
-  const [healthy, setHealthy] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<HealthState>("checking");
 
   useEffect(() => {
-    api
-      .get<HealthResponse>("/api/health")
-      .then(() => setHealthy(true))
-      .catch(() => setHealthy(false));
+    const unsubscribe = subscribeToHealth(setStatus);
+    checkHealth();
+    return unsubscribe;
   }, []);
 
-  if (healthy === null) {
-    return <Chip label="Checking backend..." size="small" sx={{ color: "#fff" }} />;
-  }
-
-  if (healthy) {
-    return (
-      <Chip
-        icon={<CheckCircleOutlineRoundedIcon sx={{ color: "#4caf50 !important" }} />}
-        label="Backend connected"
-        size="small"
-        variant="outlined"
-        sx={{ color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}
+  let icon;
+  let tooltip;
+  if (status === "up") {
+    icon = <CloudDoneRoundedIcon sx={{ color: "#4caf50" }} aria-label="modeling-services-up" />;
+    tooltip = "Modeling services available";
+  } else if (status === "down") {
+    icon = <CloudOffRoundedIcon sx={{ color: "#ef5350" }} aria-label="modeling-services-down" />;
+    tooltip = "Modeling services not available";
+  } else {
+    icon = (
+      <CloudQueueRoundedIcon
+        sx={{ color: "rgba(255,255,255,0.7)" }}
+        aria-label="modeling-services-checking"
       />
     );
+    tooltip = "Checking modeling services...";
   }
 
   return (
-    <Chip
-      icon={<ErrorOutlineRoundedIcon sx={{ color: "#ef5350 !important" }} />}
-      label="Backend unavailable"
-      size="small"
-      variant="outlined"
-      sx={{ color: "#fff", borderColor: "rgba(255,255,255,0.5)" }}
-    />
+    <Tooltip title={tooltip}>
+      <Box sx={{ display: "flex", alignItems: "center" }}>{icon}</Box>
+    </Tooltip>
   );
 }

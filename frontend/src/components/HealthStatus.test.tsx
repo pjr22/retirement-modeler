@@ -3,6 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { renderWithRouter, axiosOk } from "../test/helpers";
 import HealthStatus from "./HealthStatus";
 import api from "../api";
+import { _resetHealthMonitorForTests } from "../healthMonitor";
 
 vi.mock("../api", () => ({
   default: { get: vi.fn() },
@@ -11,6 +12,7 @@ vi.mock("../api", () => ({
   createUserProfile: vi.fn(),
   updateUserProfile: vi.fn(),
   deleteUserProfile: vi.fn(),
+  cloneUserProfile: vi.fn(),
   listAccounts: vi.fn(),
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
@@ -38,27 +40,28 @@ vi.mock("../api", () => ({
 describe("HealthStatus", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetHealthMonitorForTests();
   });
 
-  it("shows checking message while loading", () => {
+  it("shows the checking icon initially", () => {
     vi.mocked(api.get).mockReturnValue(new Promise(() => {}));
     renderWithRouter(<HealthStatus />);
-    expect(screen.getByText("Checking backend...")).toBeInTheDocument();
+    expect(screen.getByLabelText("modeling-services-checking")).toBeInTheDocument();
   });
 
-  it("shows connected when health check succeeds", async () => {
+  it("shows the available icon when health check succeeds", async () => {
     vi.mocked(api.get).mockResolvedValue(axiosOk({ status: "UP", timestamp: "2025-01-01" }));
     renderWithRouter(<HealthStatus />);
     await waitFor(() => {
-      expect(screen.getByText("Backend connected")).toBeInTheDocument();
+      expect(screen.getByLabelText("modeling-services-up")).toBeInTheDocument();
     });
   });
 
-  it("shows unavailable when health check fails", async () => {
+  it("shows the unavailable icon when health check fails", async () => {
     vi.mocked(api.get).mockRejectedValue(new Error("Network error"));
     renderWithRouter(<HealthStatus />);
     await waitFor(() => {
-      expect(screen.getByText("Backend unavailable")).toBeInTheDocument();
+      expect(screen.getByLabelText("modeling-services-down")).toBeInTheDocument();
     });
   });
 });

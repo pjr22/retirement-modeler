@@ -288,4 +288,11 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
             get("/api/users/{profileId}/simulations", ownersProfileId).with(user(otherUserDetails)))
         .andExpect(status().isNotFound());
   }
+
+  @Test
+  void otherUserCannotCloneOwnersProfile() throws Exception {
+    mockMvc
+        .perform(post("/api/users/{id}/clone", ownersProfileId).with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
 }

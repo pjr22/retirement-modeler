@@ -60,4 +60,13 @@ public class UserProfileController {
       @PathVariable UUID id, @AuthenticationPrincipal CustomUserDetails userDetails) {
     service.delete(id, userDetails.getId());
   }
+
+  @PostMapping("/{id}/clone")
+  @ResponseStatus(HttpStatus.CREATED)
+  public UserProfile clone(
+      @PathVariable UUID id,
+      @RequestBody(required = false) UserProfile overrides,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    return service.cloneProfile(id, userDetails.getId(), overrides);
+  }
 }

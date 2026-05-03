@@ -180,6 +180,7 @@ export default function ScenarioDetailPage() {
   const navigate = useNavigate();
   const isNew = scenarioId === "new";
   const profileId = searchParams.get("profileId");
+  const cloneFrom = searchParams.get("cloneFrom");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
@@ -192,6 +193,9 @@ export default function ScenarioDetailPage() {
     accountIds: [] as string[],
     assumptions: { ...defaultAssumptions },
   });
+  // When the user opened the editor via clone, the source's income sources are
+  // staged here so they can be created on the new scenario after the first save.
+  const [pendingIncomeCopies, setPendingIncomeCopies] = useState<IncomeSource[]>([]);
 
   // IncomeSource CRUD dialog state.
   const [incomeDialogOpen, setIncomeDialogOpen] = useState(false);
@@ -232,18 +236,42 @@ export default function ScenarioDetailPage() {
 
   useEffect(() => {
     if (isNew && profileId) {
-      Promise.all([listAccounts(profileId), getUserProfile(profileId)])
-        .then(([accRes, profileRes]) => {
-          setAccounts(accRes.data);
-          setProfile(profileRes.data);
-          // For new scenarios, default to all accounts selected.
-          setForm((prev) => ({ ...prev, accountIds: accRes.data.map((a) => a.id) }));
-        })
-        .catch(() => {});
+      if (cloneFrom) {
+        // Deep-clone path: prefill from source scenario, stage its income sources
+        // so they can be re-created against the new scenario after the first save.
+        Promise.all([
+          listAccounts(profileId),
+          getUserProfile(profileId),
+          getScenario(cloneFrom),
+          listIncomeSources(cloneFrom),
+        ])
+          .then(([accRes, profileRes, scenarioRes, incomeRes]) => {
+            setAccounts(accRes.data);
+            setProfile(profileRes.data);
+            const src = scenarioRes.data;
+            setForm({
+              name: `Copy of ${src.name}`,
+              description: src.description ?? "",
+              accountIds: src.accountIds,
+              assumptions: src.assumptions,
+            });
+            setPendingIncomeCopies(incomeRes.data);
+          })
+          .catch(() => setError("Failed to load scenario to clone"));
+      } else {
+        Promise.all([listAccounts(profileId), getUserProfile(profileId)])
+          .then(([accRes, profileRes]) => {
+            setAccounts(accRes.data);
+            setProfile(profileRes.data);
+            // For new scenarios, default to all accounts selected.
+            setForm((prev) => ({ ...prev, accountIds: accRes.data.map((a) => a.id) }));
+          })
+          .catch(() => {});
+      }
     } else if (scenarioId) {
       loadScenario();
     }
-  }, [scenarioId, isNew, profileId, loadScenario]);
+  }, [scenarioId, isNew, profileId, cloneFrom, loadScenario]);
 
   const handleSave = async () => {
     try {
@@ -255,7 +283,23 @@ export default function ScenarioDetailPage() {
       };
       if (isNew && profileId) {
         const res = await createScenario(profileId, payload);
-        navigate(`/scenarios/${res.data.id}`, { replace: true });
+        const newId = res.data.id;
+        if (pendingIncomeCopies.length > 0) {
+          await Promise.all(
+            pendingIncomeCopies.map((src) =>
+              createIncomeSource(newId, {
+                name: src.name,
+                type: src.type,
+                monthlyAmount: src.monthlyAmount,
+                startDate: src.startDate,
+                endDate: src.endDate,
+                inflationAdjusted: src.inflationAdjusted,
+              }),
+            ),
+          );
+          setPendingIncomeCopies([]);
+        }
+        navigate(`/scenarios/${newId}`, { replace: true });
       } else if (scenarioId) {
         await updateScenario(scenarioId, payload);
         loadScenario();
@@ -387,7 +431,10 @@ export default function ScenarioDetailPage() {
 
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
         <IconButton
-          onClick={() => navigate(profileId ? `/profiles/${profileId}/scenarios` : "/")}
+          onClick={() => {
+            const backProfileId = profileId ?? profile?.id;
+            navigate(backProfileId ? `/profiles/${backProfileId}` : "/");
+          }}
           sx={{ mr: 1 }}
         >
           <ArrowBackIcon />
@@ -492,8 +539,9 @@ export default function ScenarioDetailPage() {
         </Box>
         {isNew ? (
           <Typography color="text.secondary">
-            Save the scenario first, then add income sources (pension, Social Security, employment,
-            rental, etc.).
+            {pendingIncomeCopies.length > 0
+              ? `${pendingIncomeCopies.length} income source(s) will be copied from the source scenario when you save.`
+              : "Save the scenario first, then add income sources (pension, Social Security, employment, rental, etc.)."}
           </Typography>
         ) : incomeSources.length === 0 ? (
           <Typography color="text.secondary">
@@ -554,6 +602,7 @@ export default function ScenarioDetailPage() {
               onChange={(e) => updateAssumptions({ expectedRateOfReturn: Number(e.target.value) })}
               fullWidth
               helperText="e.g. 0.07 for 7%"
+              slotProps={{ htmlInput: { step: 0.005 } }}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
@@ -564,6 +613,7 @@ export default function ScenarioDetailPage() {
               onChange={(e) => updateAssumptions({ inflationRate: Number(e.target.value) })}
               fullWidth
               helperText="e.g. 0.03 for 3%"
+              slotProps={{ htmlInput: { step: 0.005 } }}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
@@ -604,6 +654,7 @@ export default function ScenarioDetailPage() {
                 }
                 fullWidth
                 helperText="e.g. 0.04 for 4%"
+                slotProps={{ htmlInput: { step: 0.005 } }}
               />
             </Grid>
           )}
@@ -621,6 +672,7 @@ export default function ScenarioDetailPage() {
                 }
                 fullWidth
                 helperText="What you want to spend per month (income offsets the savings draw)"
+                slotProps={{ htmlInput: { step: 100 } }}
               />
             </Grid>
           )}
@@ -632,6 +684,7 @@ export default function ScenarioDetailPage() {
               onChange={(e) => updateAssumptions({ standardDeviation: Number(e.target.value) })}
               fullWidth
               helperText="For Monte Carlo simulation"
+              slotProps={{ htmlInput: { step: 0.005 } }}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 4 }}>
@@ -641,6 +694,7 @@ export default function ScenarioDetailPage() {
               value={form.assumptions.monteCarloTrials}
               onChange={(e) => updateAssumptions({ monteCarloTrials: Number(e.target.value) })}
               fullWidth
+              slotProps={{ htmlInput: { step: 100 } }}
             />
           </Grid>
           <Grid size={{ xs: 12 }}>

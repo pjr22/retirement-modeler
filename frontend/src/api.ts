@@ -31,6 +31,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       clearAuth();
       window.location.href = "/login";
+    } else if (!error.response || error.response.status >= 500) {
+      // Network error or server error suggests the backend is unreachable. Dynamic import
+      // sidesteps a circular dependency between this file and healthMonitor.
+      import("./healthMonitor").then(({ markPossiblyDown }) => markPossiblyDown());
     }
     return Promise.reject(error);
   },
@@ -68,6 +72,8 @@ export const createUserProfile = (profile: Omit<UserProfile, "id">) =>
 export const updateUserProfile = (id: string, profile: Omit<UserProfile, "id">) =>
   api.put<UserProfile>(`/api/users/${id}`, profile);
 export const deleteUserProfile = (id: string) => api.delete(`/api/users/${id}`);
+export const cloneUserProfile = (id: string, overrides: Omit<UserProfile, "id">) =>
+  api.post<UserProfile>(`/api/users/${id}/clone`, overrides);
 
 export const listAccounts = (profileId: string) =>
   api.get<Account[]>(`/api/users/${profileId}/accounts`);

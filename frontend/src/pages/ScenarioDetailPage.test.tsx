@@ -276,6 +276,43 @@ describe("ScenarioDetailPage", () => {
     });
   });
 
+  it("prefills from source and copies income sources when cloning via cloneFrom", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+    vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));
+    vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([samplePension]));
+    vi.mocked(createScenario).mockResolvedValue(axiosOk({ ...sampleScenario, id: "scen-new" }));
+    vi.mocked(createIncomeSource).mockResolvedValue(
+      axiosOk({ ...samplePension, id: "inc-new", scenarioId: "scen-new" }),
+    );
+
+    renderWithRouter(<ScenarioDetailPage />, {
+      route: "/scenarios/new?profileId=prof-1&cloneFrom=scen-1",
+      path: "/scenarios/:scenarioId",
+    });
+
+    // Form prefilled with "Copy of {original}"
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Copy of Conservative")).toBeInTheDocument();
+    });
+    // Hint about pending income copies is shown
+    expect(screen.getByText(/1 income source\(s\) will be copied/)).toBeInTheDocument();
+
+    const saveButtons = screen.getAllByRole("button").filter((b) => b.textContent === "Save");
+    await user.click(saveButtons[0]);
+
+    await waitFor(() => {
+      expect(createScenario).toHaveBeenCalledWith(
+        "prof-1",
+        expect.objectContaining({ name: "Copy of Conservative", accountIds: ["acc-1"] }),
+      );
+      expect(createIncomeSource).toHaveBeenCalledWith(
+        "scen-new",
+        expect.objectContaining({ name: "Pension", monthlyAmount: 2500 }),
+      );
+    });
+  });
+
   it("creates a new scenario when accessed via /scenarios/new", async () => {
     const user = userEvent.setup();
     vi.mocked(listAccounts).mockResolvedValue(axiosOk(sampleAccounts));

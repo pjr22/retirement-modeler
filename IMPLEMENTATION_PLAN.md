@@ -192,7 +192,7 @@ Simulations:
 - JWT secret committed to source — needs to come from env / secret manager
 - `SecurityConfig` requires a `CorsConfigurationSource` bean that only `DevCorsConfig` (`@Profile("dev")`) provides — non-dev profiles would fail to start
 - JWT lives in localStorage (XSS-exposed) — switch to httpOnly cookie or in-memory + refresh
-- `MonteCarloEngine.computeMedianYearsOfSurvival` would NPE on empty trial list
+- ~~`MonteCarloEngine.computeMedianYearsOfSurvival` would NPE on empty trial list~~ *(fixed 2026-05-02)*
 
 ---
 
@@ -325,7 +325,7 @@ Tax-aware withdrawal ordering can change a 30-year retirement's lifetime tax bil
 - [ ] Move JWT from localStorage to httpOnly cookie (or in-memory + refresh)
 - [ ] Production-profile CORS bean (so app starts without `dev` profile)
 - [ ] Switch backend integration tests from H2 to Testcontainers (so V001+ migrations are exercised)
-- [ ] Fix `MonteCarloEngine.computeMedianYearsOfSurvival` empty-list NPE
+- [x] Fix `MonteCarloEngine.computeMedianYearsOfSurvival` empty-list crash *(landed 2026-05-02 — pulled forward from Phase 6)*
 - [ ] Database backups strategy
 - [ ] CI/CD pipeline (GitHub Actions)
 

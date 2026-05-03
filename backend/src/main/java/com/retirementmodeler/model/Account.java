@@ -28,7 +28,7 @@ public class Account {
 
   private BigDecimal annualContribution;
 
-  protected Account() {}
+  public Account() {}
 
   public UUID getId() {
     return id;

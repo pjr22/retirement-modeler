@@ -16,11 +16,18 @@ import {
   TextField,
   MenuItem,
   Alert,
+  Tooltip,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { listUserProfiles, createUserProfile, deleteUserProfile } from "../api";
-import type { FilingStatus } from "../types";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import {
+  listUserProfiles,
+  createUserProfile,
+  deleteUserProfile,
+  cloneUserProfile,
+} from "../api";
+import type { FilingStatus, UserProfile } from "../types";
 import { formatMonthYear } from "../utils";
 
 const FILING_STATUSES: { value: FilingStatus; label: string }[] = [
@@ -38,13 +45,13 @@ const emptyForm = {
   filingStatus: "SINGLE" as FilingStatus,
 };
 
+type DialogMode = { kind: "create" } | { kind: "clone"; sourceId: string };
+
 export default function ProfilesPage() {
   const navigate = useNavigate();
-  const [profiles, setProfiles] = useState<
-    Awaited<ReturnType<typeof listUserProfiles>>["data"][number][]
-  >([]);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [error, setError] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<DialogMode | null>(null);
   const [form, setForm] = useState(emptyForm);
 
   const loadProfiles = useCallback(async () => {
@@ -60,14 +67,39 @@ export default function ProfilesPage() {
     loadProfiles();
   }, [loadProfiles]);
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    setForm(emptyForm);
+    setDialogMode({ kind: "create" });
+  };
+
+  const openClone = (source: UserProfile) => {
+    setForm({
+      name: `Copy of ${source.name}`,
+      dateOfBirth: source.dateOfBirth,
+      plannedRetirementDate: source.plannedRetirementDate,
+      lifeExpectancy: source.lifeExpectancy,
+      filingStatus: source.filingStatus,
+    });
+    setDialogMode({ kind: "clone", sourceId: source.id });
+  };
+
+  const closeDialog = () => {
+    setDialogMode(null);
+    setForm(emptyForm);
+  };
+
+  const handleSubmit = async () => {
+    if (!dialogMode) return;
     try {
-      await createUserProfile(form);
-      setDialogOpen(false);
-      setForm(emptyForm);
+      if (dialogMode.kind === "create") {
+        await createUserProfile(form);
+      } else {
+        await cloneUserProfile(dialogMode.sourceId, form);
+      }
+      closeDialog();
       loadProfiles();
     } catch {
-      setError("Failed to create profile");
+      setError(dialogMode.kind === "clone" ? "Failed to clone profile" : "Failed to create profile");
     }
   };
 
@@ -80,6 +112,9 @@ export default function ProfilesPage() {
     }
   };
 
+  const dialogTitle = dialogMode?.kind === "clone" ? "Clone Profile" : "Create Profile";
+  const submitLabel = dialogMode?.kind === "clone" ? "Clone" : "Create";
+
   return (
     <Box>
       {error && (
@@ -89,7 +124,7 @@ export default function ProfilesPage() {
       )}
       <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
         <Typography variant="h4">Retirement Profiles</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
           Create Profile
         </Button>
       </Box>
@@ -104,9 +139,18 @@ export default function ProfilesPage() {
             <ListItem
               key={p.id}
               secondaryAction={
-                <IconButton edge="end" onClick={() => handleDelete(p.id)} color="error">
-                  <DeleteIcon />
-                </IconButton>
+                <Box>
+                  <Tooltip title="Clone">
+                    <IconButton edge="end" onClick={() => openClone(p)} sx={{ mr: 1 }}>
+                      <ContentCopyIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete">
+                    <IconButton edge="end" onClick={() => handleDelete(p.id)} color="error">
+                      <DeleteIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               }
               disablePadding
             >
@@ -121,9 +165,14 @@ export default function ProfilesPage() {
         </List>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Create Profile</DialogTitle>
+      <Dialog open={dialogMode !== null} onClose={closeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>{dialogTitle}</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+          {dialogMode?.kind === "clone" && (
+            <Typography variant="body2" color="text.secondary">
+              Accounts, scenarios, and income sources will be copied from the source profile.
+            </Typography>
+          )}
           <TextField
             label="Name"
             value={form.name}
@@ -171,13 +220,13 @@ export default function ProfilesPage() {
           </TextField>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={closeDialog}>Cancel</Button>
           <Button
-            onClick={handleCreate}
+            onClick={handleSubmit}
             variant="contained"
             disabled={!form.name || !form.dateOfBirth || !form.plannedRetirementDate}
           >
-            Create
+            {submitLabel}
           </Button>
         </DialogActions>
       </Dialog>

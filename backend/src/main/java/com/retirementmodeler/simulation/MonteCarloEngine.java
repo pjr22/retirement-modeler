@@ -134,6 +134,7 @@ public class MonteCarloEngine {
       }
       survivalYears.add(years);
     }
+    if (survivalYears.isEmpty()) return 0.0;
     Collections.sort(survivalYears);
     int mid = survivalYears.size() / 2;
     if (survivalYears.size() % 2 == 0 && mid > 0) {
