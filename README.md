@@ -35,12 +35,21 @@ drained first:
 - **Tax-Optimized** — drain in tiers: taxable → tax-deferred → tax-free.
 - **Custom** — you specify the exact order by account type.
 
+Whatever ordering you pick, Traditional 401(k) and Traditional IRA balances are
+subject to **Required Minimum Distributions** starting at SECURE 2.0 age (73 if
+born by 1959, 75 if born in 1960 or later). If your chosen strategy doesn't
+withdraw enough from Traditional accounts in a calendar year, the simulator
+force-drains the shortfall at year-end. Forced cash that exceeds what your
+cashflow target needs is parked in a Savings account so it keeps compounding.
+
 ### Simulation results
 
 Each run produces a deterministic projection (year-by-year balance,
-contributions, withdrawals, income, tax breakdown) plus a Monte Carlo summary
-across the trial count you set: success rate, median years of survival, and
-percentile balance bands (p10/p25/p50/p75/p90) you can chart by metric.
+contributions, withdrawals, income, RMD, tax breakdown) plus a Monte Carlo
+summary across the trial count you set: success rate, median years of survival,
+and percentile balance bands (p10/p25/p50/p75/p90) you can chart by metric. The
+year-by-year table shows the RMD portion of each year's Traditional withdrawals
+so you can see when the rule kicks in.
 
 ## Quick start (using the app)
 
