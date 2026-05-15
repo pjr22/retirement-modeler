@@ -505,6 +505,14 @@ export default function SimulationResultsPage() {
                 <TableCell align="right">Balance</TableCell>
                 <TableCell align="right">Contributions</TableCell>
                 <TableCell align="right">Withdrawals</TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="Required Minimum Distribution — the portion of Traditional-account withdrawals forced by the SECURE 2.0 rule starting at age 73 (or 75 for those born 1960+). RMD amounts are included in the Withdrawals column total."
+                    arrow
+                  >
+                    <span>RMD</span>
+                  </MuiTooltip>
+                </TableCell>
                 <TableCell align="right">Income</TableCell>
                 <TableCell align="right">Ordinary Tax</TableCell>
                 <TableCell align="right">Capital Gains Tax</TableCell>
@@ -518,6 +526,7 @@ export default function SimulationResultsPage() {
                   <TableCell align="right">{formatCurrency(agg.seriesValue)}</TableCell>
                   <TableCell align="right">{formatCurrency(agg.contributions)}</TableCell>
                   <TableCell align="right">{formatCurrency(agg.withdrawals)}</TableCell>
+                  <TableCell align="right">{formatCurrency(agg.row.yearRmd ?? 0)}</TableCell>
                   <TableCell align="right">{formatCurrency(agg.income)}</TableCell>
                   <TableCell align="right">{formatCurrency(agg.ordinaryTax)}</TableCell>
                   <TableCell align="right">{formatCurrency(agg.capitalGainsTax)}</TableCell>
@@ -543,7 +552,9 @@ export default function SimulationResultsPage() {
               <br />
               Tax columns scale the deterministic row's bracket-based total by the series'
               (income + withdrawals), then split using the deterministic row's ordinary /
-              capital-gains proportion.
+              capital-gains proportion. The RMD column is the deterministic row's forced
+              Traditional-account draw and is shown as a fixed reference — it doesn't vary
+              across Monte Carlo trials.
             </Typography>
           )}
         </Collapse>

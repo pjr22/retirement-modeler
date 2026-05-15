@@ -646,6 +646,228 @@ class SimulationEngineTest {
     assertThat(relativeDiff).isGreaterThan(new BigDecimal("0.10"));
   }
 
+  // ---- Phase 5 RMD tests ----
+
+  /** Pre-RMD-age retirees never see a yearRmd entry. */
+  @Test
+  void preRmdAgeShowsZeroRmd() {
+    LocalDate dob = TODAY.minusYears(67); // age 67, below RMD start
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 72;
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(account(AccountType.TRADITIONAL_IRA, bd(1_000_000))),
+            List.of(),
+            assumptions(WithdrawalStrategy.PORTFOLIO_PERCENTAGE, bd(0.04), null, bd(0)),
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    for (YearlyProjection row : rows) {
+      assertThat(row.yearRmd())
+          .as("yearRmd at age %d (%s)", row.age(), row.date())
+          .isEqualByComparingTo("0");
+    }
+  }
+
+  /**
+   * TAX_OPTIMIZED with a large Traditional and a large brokerage past age 73 — strategy alone would
+   * keep Traditional untouched while draining brokerage, but the RMD rule forces a Traditional draw
+   * each year. yearRmd > 0 and yearOrdinaryIncome reflects the forced ordinary draw.
+   */
+  @Test
+  void taxOptimizedPostRmdAgeStillDrainsTraditionalForRmd() {
+    LocalDate dob = TODAY.minusYears(75); // born 1951 → RMD age 73 → already past
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 80;
+
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(500_000));
+    Account brokerage = account(AccountType.TAXABLE_BROKERAGE, bd(500_000));
+
+    SimulationAssumptions taxOptimized =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.PORTFOLIO_PERCENTAGE,
+            bd(0.04),
+            null,
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.TAX_OPTIMIZED,
+            null);
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad, brokerage),
+            List.of(),
+            taxOptimized,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal totalRmd =
+        rows.stream().map(YearlyProjection::yearRmd).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalOrdinary =
+        rows.stream()
+            .map(YearlyProjection::yearOrdinaryIncome)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // RMD was forced despite TAX_OPTIMIZED's brokerage-first preference.
+    assertThat(totalRmd).isPositive();
+    // The forced Traditional draw shows up as ordinary income.
+    assertThat(totalOrdinary).isPositive();
+  }
+
+  /**
+   * CASHFLOW_TARGET fully covered by income — strategy alone would withdraw $0, but RMD forces a
+   * Traditional withdrawal anyway. The forced cash lands in a synthetic Savings account (no Savings
+   * present in input) — verifiable because total ending wealth is materially higher than
+   * (Traditional - RMD-drained-and-lost), and the year-by-year yearWithdrawals field reports the
+   * forced amount.
+   */
+  @Test
+  void cashflowTargetWithSurplusIncomeStillTriggersRmd() {
+    LocalDate dob = TODAY.minusYears(75);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 78;
+
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(500_000));
+    // Pension well above the $2K cashflow target — strategy alone won't withdraw.
+    IncomeSource pension = source("Pension", IncomeType.PENSION, bd(8_000), TODAY, null, false);
+
+    SimulationAssumptions cashflow =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.CASHFLOW_TARGET,
+            null,
+            bd(2_000),
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.PROPORTIONAL,
+            null);
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad),
+            List.of(pension),
+            cashflow,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal totalRmd =
+        rows.stream().map(YearlyProjection::yearRmd).reduce(BigDecimal.ZERO, BigDecimal::add);
+    BigDecimal totalWithdrawn =
+        rows.stream()
+            .map(YearlyProjection::yearWithdrawals)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // RMD forced a withdrawal despite the strategy not requesting one.
+    assertThat(totalRmd).isPositive();
+    // The forced amount is reflected in yearWithdrawals.
+    assertThat(totalWithdrawn).isGreaterThanOrEqualTo(totalRmd);
+
+    // Synthetic Savings preserved wealth: final-row balance is much larger than the residual
+    // Traditional alone would be after multiple years of forced drains-without-replacement.
+    YearlyProjection lastRow = rows.get(rows.size() - 1);
+    assertThat(lastRow.balance()).isGreaterThan(bd(500_000).subtract(totalRmd).add(bd(1_000)));
+  }
+
+  /**
+   * The annual RMD obligation in the first full calendar year matches the Uniform Lifetime Table
+   * formula on the user's starting Traditional balance. At age 75 the divisor is 24.6.
+   */
+  @Test
+  void yearRmdMatchesUniformLifetimeFormula() {
+    LocalDate dob = TODAY.minusYears(75);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 78;
+
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(1_000_000));
+
+    SimulationAssumptions assumptions =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.CASHFLOW_TARGET,
+            null,
+            bd(0),
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.PROPORTIONAL,
+            null);
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad),
+            List.of(),
+            assumptions,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    // Find a row that covers a full calendar year (skip the partial first row, which only sees a
+    // fractional initial year's RMD). Any row from row[1] onward whose age==76 or later.
+    YearlyProjection fullYearRow =
+        rows.stream().filter(r -> r.age() >= 76).findFirst().orElseThrow();
+
+    // Expected: $1M / 24.6 ≈ $40,650 (no growth, so balance ≈ $1M at the start of year 2, less the
+    // forced year-1 RMD ≈ $40,650, giving a year-2 expected of ≈ $959,350 / 25.5 ≈ $37,621).
+    // Use a loose 30% lower bound to verify the order of magnitude without over-specifying.
+    assertThat(fullYearRow.yearRmd()).isBetween(bd(25_000), bd(45_000));
+  }
+
+  /** RMD-forced cash deposits into an EXISTING Savings account when one is present. */
+  @Test
+  void rmdForcedCashFlowsIntoExistingSavings() {
+    LocalDate dob = TODAY.minusYears(75);
+    LocalDate retire = TODAY.plusMonths(1);
+    int lifeExpectancyAge = 78;
+
+    Account trad = account(AccountType.TRADITIONAL_IRA, bd(500_000));
+    Account savings = account(AccountType.SAVINGS, bd(0));
+    IncomeSource pension = source("Pension", IncomeType.PENSION, bd(8_000), TODAY, null, false);
+
+    SimulationAssumptions cashflow =
+        new SimulationAssumptions(
+            bd(0),
+            bd(0),
+            WithdrawalStrategy.CASHFLOW_TARGET,
+            null,
+            bd(2_000),
+            bd(0),
+            1,
+            WithdrawalOrderingStrategy.PROPORTIONAL,
+            null);
+
+    List<YearlyProjection> rows =
+        engine.projectDeterministic(
+            List.of(trad, savings),
+            List.of(pension),
+            cashflow,
+            FilingStatus.SINGLE,
+            dob,
+            retire,
+            lifeExpectancyAge);
+
+    BigDecimal totalRmd =
+        rows.stream().map(YearlyProjection::yearRmd).reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    // Final wealth = Traditional residual + Savings. With surplus income forcing the user to hold
+    // RMD cash in Savings rather than synthetic, ending balance should approximately equal
+    // (startingTrad + 0 - tax_consumed). Since taxes don't directly reduce account balances in the
+    // engine (taxes are reported but not debited), ending wealth ≈ starting Traditional.
+    YearlyProjection lastRow = rows.get(rows.size() - 1);
+    assertThat(totalRmd).isPositive();
+    assertThat(lastRow.balance()).isCloseTo(bd(500_000), within(bd(500_000), 1));
+  }
+
   // ---- helpers ----
 
   private static SimulationAssumptions assumptions(

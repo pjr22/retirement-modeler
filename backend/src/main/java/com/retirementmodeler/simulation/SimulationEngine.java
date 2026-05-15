@@ -13,6 +13,7 @@ import com.retirementmodeler.simulation.withdrawal.CustomAllocator;
 import com.retirementmodeler.simulation.withdrawal.ProportionalAllocator;
 import com.retirementmodeler.simulation.withdrawal.TaxOptimizedAllocator;
 import com.retirementmodeler.simulation.withdrawal.WithdrawalAllocator;
+import com.retirementmodeler.tax.RmdCalculator;
 import com.retirementmodeler.tax.SocialSecurityTaxer;
 import com.retirementmodeler.tax.TaxBracketProvider;
 import com.retirementmodeler.tax.TaxBrackets;
@@ -77,6 +78,17 @@ import org.springframework.stereotype.Component;
  * for a row is computed against the brackets of the row's anchor year using a Nov–Oct income
  * window. The mismatch is at most 1–3 months of income placed in the wrong calendar year — small
  * relative to the other modeling approximations.
+ *
+ * <h2>Phase 5 — Required Minimum Distributions</h2>
+ *
+ * <p>Starting at the SECURE 2.0 RMD age (73 for DOB ≤ 1959, 75 for DOB ≥ 1960), the engine forces a
+ * minimum draw from Traditional 401(k) + Traditional IRA accounts each calendar year. The annual
+ * obligation is computed at Jan 1 from prior-Dec-31 Traditional balance / IRS Uniform Lifetime
+ * divisor for the age the user attains during the year. Strategy-driven Traditional withdrawals
+ * count toward satisfying the obligation; any shortfall is force-drained in December
+ * (proportionally across Traditional balances). Forced-RMD cash is deposited into the first SAVINGS
+ * account — or, if none exists, a transient synthetic SAVINGS account that lives only for the
+ * simulation. Per-year RMD totals surface on {@link YearlyProjection#yearRmd}.
  */
 @Component
 public class SimulationEngine {
@@ -104,19 +116,26 @@ public class SimulationEngine {
   private final TaxBracketProvider taxBracketProvider;
   private final TaxCalculator taxCalculator;
   private final SocialSecurityTaxer socialSecurityTaxer;
+  private final RmdCalculator rmdCalculator;
 
   public SimulationEngine(
       TaxBracketProvider taxBracketProvider,
       TaxCalculator taxCalculator,
-      SocialSecurityTaxer socialSecurityTaxer) {
+      SocialSecurityTaxer socialSecurityTaxer,
+      RmdCalculator rmdCalculator) {
     this.taxBracketProvider = taxBracketProvider;
     this.taxCalculator = taxCalculator;
     this.socialSecurityTaxer = socialSecurityTaxer;
+    this.rmdCalculator = rmdCalculator;
   }
 
   /** Convenience constructor for tests — wires default instances of the tax components. */
   public SimulationEngine() {
-    this(new TaxBracketProvider(), new TaxCalculator(), new SocialSecurityTaxer());
+    this(
+        new TaxBracketProvider(),
+        new TaxCalculator(),
+        new SocialSecurityTaxer(),
+        new RmdCalculator());
   }
 
   private static BigDecimal scaled(BigDecimal v) {
@@ -206,16 +225,27 @@ public class SimulationEngine {
     WithdrawalAllocator allocator = buildAllocator(assumptions);
 
     // Per-account running balances + a fast id→index lookup so we can apply the allocator's
-    // per-account result without scanning.
-    List<BigDecimal> balances = new ArrayList<>(accounts.size());
+    // per-account result without scanning. `activeAccounts` is a mutable shallow copy because the
+    // RMD path may lazily append a synthetic Savings account during the simulation.
+    List<Account> activeAccounts = new ArrayList<>(accounts);
+    List<BigDecimal> balances = new ArrayList<>(activeAccounts.size());
     Map<UUID, Integer> idxByUuid = new HashMap<>();
-    for (int i = 0; i < accounts.size(); i++) {
-      Account a = accounts.get(i);
+    for (int i = 0; i < activeAccounts.size(); i++) {
+      Account a = activeAccounts.get(i);
       balances.add(scaled(a.getBalance() != null ? a.getBalance() : BigDecimal.ZERO));
       if (a.getId() != null) {
         idxByUuid.put(a.getId(), i);
       }
     }
+
+    // RMD state (SECURE 2.0). rmdRemainingThisYear is the unsatisfied portion of the current
+    // calendar year's RMD obligation; reset every Jan 1 to the year's annual RMD computed from
+    // the prior-Dec-31 Traditional balance (or, on sim start mid-year, the user's current balance
+    // as a proxy — a documented simplification). yearRmdTotal is the satisfied portion attributable
+    // to the 12-month row window and emits as YearlyProjection.yearRmd.
+    int rmdStartAge = RmdCalculator.rmdStartAge(dateOfBirth.getYear());
+    BigDecimal rmdRemainingThisYear = scaled(BigDecimal.ZERO);
+    BigDecimal yearRmdTotal = scaled(BigDecimal.ZERO);
 
     BigDecimal inflationFactor = scaled(BigDecimal.ONE);
 
@@ -247,6 +277,25 @@ public class SimulationEngine {
             scaled(
                 projectAnnualEarningsTestReduction(
                     sources, currentMonth, deathDate, fraMonth, inflationFactor));
+        // Compute the year's RMD obligation. Balances at this point reflect end-of-prior-Dec (no
+        // growth applied yet for the new year); on sim start mid-year, we use the user's current
+        // balance as a proxy for prior-Dec-31 — a documented simplification for the partial first
+        // year.
+        int ageAttainedThisYear = currentMonth.getYear() - dateOfBirth.getYear();
+        if (ageAttainedThisYear >= rmdStartAge) {
+          BigDecimal traditionalBalance = BigDecimal.ZERO;
+          for (int i = 0; i < activeAccounts.size(); i++) {
+            if (isTraditional(activeAccounts.get(i).getAccountType())) {
+              traditionalBalance = traditionalBalance.add(balances.get(i), MC);
+            }
+          }
+          rmdRemainingThisYear =
+              scaled(
+                  rmdCalculator.computeAnnualRmd(
+                      dateOfBirth.getYear(), ageAttainedThisYear, traditionalBalance));
+        } else {
+          rmdRemainingThisYear = scaled(BigDecimal.ZERO);
+        }
       }
 
       // At the FRA month, freeze the recoup bonus. Spread the lifetime withheld evenly over
@@ -272,14 +321,14 @@ public class SimulationEngine {
               ? BigDecimal.valueOf(monthlyReturnSampler.getAsDouble())
               : monthlyDeterministicRate;
       BigDecimal growthFactor = BigDecimal.ONE.add(monthlyRate);
-      for (int i = 0; i < accounts.size(); i++) {
+      for (int i = 0; i < activeAccounts.size(); i++) {
         balances.set(i, scaled(balances.get(i).multiply(growthFactor, MC)));
       }
 
       // 2. Pre-retirement contributions to retirement-savings accounts.
       BigDecimal monthContrib = BigDecimal.ZERO;
-      for (int i = 0; i < accounts.size(); i++) {
-        Account account = accounts.get(i);
+      for (int i = 0; i < activeAccounts.size(); i++) {
+        Account account = activeAccounts.get(i);
         if (!isRetired
             && account.getAnnualContribution() != null
             && isContributionType(account.getAccountType())) {
@@ -328,16 +377,19 @@ public class SimulationEngine {
       BigDecimal monthWithdrawal = BigDecimal.ZERO;
       BigDecimal monthOrdinaryFromWithdrawals = BigDecimal.ZERO;
       BigDecimal monthLtcgFromWithdrawals = BigDecimal.ZERO;
+      BigDecimal monthRmdSatisfied = BigDecimal.ZERO;
       if (isRetired) {
         BigDecimal totalBalanceNow = sum(balances);
         BigDecimal requested =
             computeMonthlyWithdrawal(totalBalanceNow, assumptions, inflationFactor, monthIncome);
         if (requested.signum() > 0 && totalBalanceNow.signum() > 0) {
-          List<AccountSnapshot> snapshots = new ArrayList<>(accounts.size());
-          for (int i = 0; i < accounts.size(); i++) {
+          List<AccountSnapshot> snapshots = new ArrayList<>(activeAccounts.size());
+          for (int i = 0; i < activeAccounts.size(); i++) {
             snapshots.add(
                 new AccountSnapshot(
-                    accounts.get(i).getId(), accounts.get(i).getAccountType(), balances.get(i)));
+                    activeAccounts.get(i).getId(),
+                    activeAccounts.get(i).getAccountType(),
+                    balances.get(i)));
           }
           Map<UUID, BigDecimal> allocation = allocator.allocate(snapshots, requested);
           for (Map.Entry<UUID, BigDecimal> entry : allocation.entrySet()) {
@@ -347,10 +399,16 @@ public class SimulationEngine {
             if (share.signum() <= 0) continue;
             balances.set(idx, scaled(balances.get(idx).subtract(share, MC)));
             monthWithdrawal = scaled(monthWithdrawal.add(share, MC));
-            switch (accounts.get(idx).getAccountType()) {
-              case TRADITIONAL_401K, TRADITIONAL_IRA ->
-                  monthOrdinaryFromWithdrawals =
-                      scaled(monthOrdinaryFromWithdrawals.add(share, MC));
+            switch (activeAccounts.get(idx).getAccountType()) {
+              case TRADITIONAL_401K, TRADITIONAL_IRA -> {
+                monthOrdinaryFromWithdrawals = scaled(monthOrdinaryFromWithdrawals.add(share, MC));
+                // Strategy-driven Traditional withdrawals count toward this year's RMD.
+                BigDecimal applied = share.min(rmdRemainingThisYear);
+                if (applied.signum() > 0) {
+                  rmdRemainingThisYear = scaled(rmdRemainingThisYear.subtract(applied, MC));
+                  monthRmdSatisfied = scaled(monthRmdSatisfied.add(applied, MC));
+                }
+              }
               case TAXABLE_BROKERAGE ->
                   monthLtcgFromWithdrawals = scaled(monthLtcgFromWithdrawals.add(share, MC));
               case ROTH_401K, ROTH_IRA, HSA, SAVINGS -> {
@@ -361,6 +419,50 @@ public class SimulationEngine {
         }
       }
 
+      // RMD top-up. In calendar December, if the year's RMD obligation is not yet satisfied by
+      // strategy withdrawals, force the shortfall from Traditional accounts (proportional within
+      // tier). Gross amount lands in Savings — existing if any, else a transient synthetic Savings
+      // account (per the design decision: forced cash has to go somewhere and Savings is the most
+      // realistic landing spot for unspent post-RMD wealth).
+      if (currentMonth.getMonthValue() == 12 && rmdRemainingThisYear.signum() > 0) {
+        BigDecimal traditionalAvailable = BigDecimal.ZERO;
+        for (int i = 0; i < activeAccounts.size(); i++) {
+          if (isTraditional(activeAccounts.get(i).getAccountType())) {
+            traditionalAvailable = traditionalAvailable.add(balances.get(i), MC);
+          }
+        }
+        BigDecimal forced = rmdRemainingThisYear.min(traditionalAvailable);
+        if (forced.signum() > 0 && traditionalAvailable.signum() > 0) {
+          BigDecimal allocated = BigDecimal.ZERO;
+          for (int i = 0; i < activeAccounts.size(); i++) {
+            if (!isTraditional(activeAccounts.get(i).getAccountType())) continue;
+            BigDecimal accountBalance = balances.get(i);
+            if (accountBalance.signum() <= 0) continue;
+            BigDecimal share = accountBalance.divide(traditionalAvailable, MC).multiply(forced, MC);
+            balances.set(i, scaled(accountBalance.subtract(share, MC)));
+            allocated = scaled(allocated.add(share, MC));
+            monthWithdrawal = scaled(monthWithdrawal.add(share, MC));
+            monthOrdinaryFromWithdrawals = scaled(monthOrdinaryFromWithdrawals.add(share, MC));
+            monthRmdSatisfied = scaled(monthRmdSatisfied.add(share, MC));
+          }
+          // Deposit gross forced amount into Savings. Existing first; else synthetic.
+          int savingsIdx = findSavingsIndex(activeAccounts);
+          if (savingsIdx < 0) {
+            Account synthetic = new Account();
+            synthetic.setId(UUID.randomUUID());
+            synthetic.setAccountType(AccountType.SAVINGS);
+            synthetic.setName("Savings (RMD overflow)");
+            synthetic.setBalance(BigDecimal.ZERO);
+            activeAccounts.add(synthetic);
+            balances.add(scaled(BigDecimal.ZERO));
+            idxByUuid.put(synthetic.getId(), balances.size() - 1);
+            savingsIdx = balances.size() - 1;
+          }
+          balances.set(savingsIdx, scaled(balances.get(savingsIdx).add(allocated, MC)));
+        }
+        rmdRemainingThisYear = scaled(BigDecimal.ZERO);
+      }
+
       yearContributions = scaled(yearContributions.add(monthContrib, MC));
       yearWithdrawals = scaled(yearWithdrawals.add(monthWithdrawal, MC));
       yearIncomeNonSS = scaled(yearIncomeNonSS.add(monthIncomeNonSS, MC));
@@ -369,6 +471,7 @@ public class SimulationEngine {
           scaled(yearOrdinaryFromWithdrawals.add(monthOrdinaryFromWithdrawals, MC));
       yearCapitalGainsFromWithdrawals =
           scaled(yearCapitalGainsFromWithdrawals.add(monthLtcgFromWithdrawals, MC));
+      yearRmdTotal = scaled(yearRmdTotal.add(monthRmdSatisfied, MC));
 
       // 5. Emit a row at each retirement-anchor month.
       if (currentMonth.getMonth() == rowAnchorMonth) {
@@ -404,6 +507,7 @@ public class SimulationEngine {
                 output(tax.ordinaryTax()),
                 output(tax.capitalGainsTax()),
                 output(tax.totalTax()),
+                output(yearRmdTotal),
                 scaled(inflationFactor)));
 
         // Reset year-deltas; advance inflation for the next year.
@@ -413,6 +517,7 @@ public class SimulationEngine {
         yearSocialSecurityGross = scaled(BigDecimal.ZERO);
         yearOrdinaryFromWithdrawals = scaled(BigDecimal.ZERO);
         yearCapitalGainsFromWithdrawals = scaled(BigDecimal.ZERO);
+        yearRmdTotal = scaled(BigDecimal.ZERO);
         inflationFactor = scaled(inflationFactor.multiply(BigDecimal.ONE.add(inflationRate), MC));
       }
 
@@ -633,5 +738,19 @@ public class SimulationEngine {
         || type == AccountType.ROTH_401K
         || type == AccountType.ROTH_IRA
         || type == AccountType.HSA;
+  }
+
+  private static boolean isTraditional(AccountType type) {
+    return type == AccountType.TRADITIONAL_401K || type == AccountType.TRADITIONAL_IRA;
+  }
+
+  /** Index of the first {@code SAVINGS} account in the list, or -1 if none. */
+  private static int findSavingsIndex(List<Account> accounts) {
+    for (int i = 0; i < accounts.size(); i++) {
+      if (accounts.get(i).getAccountType() == AccountType.SAVINGS) {
+        return i;
+      }
+    }
+    return -1;
   }
 }

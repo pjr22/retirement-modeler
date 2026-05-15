@@ -6,11 +6,11 @@ A living plan. Update as work lands. `[x]` = done, `[ ]` = not done.
 
 ## Status
 
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-14
 
-**Current state:** Phases 0–4 complete. Phase 4 closed today: 4.7 frontend rebuild (strategy picker with up/down custom-order picker, split Ordinary/Capital-Gains tax columns, Tax-Breakdown stacked-bar chart, Lifetime Tax stat card, Filing-Status row, dropped `flatTaxRate` UI) and 4.8 test coverage (realistic MFJ integration test asserting >10% PROPORTIONAL-vs-TAX_OPTIMIZED tax differential, 5 new frontend tests, hand-calc verified against the running engine to the cent). Decision-grade tax gate reached: 128 backend tests + 35 frontend tests green.
+**Current state:** Phases 0–4 complete; Phase 5 in progress. RMDs (Phase 5.1) landed today — see Phase 5 section below. Also reflects the 2026-05-03 "Bug fixes and UI improvements" sweep that consolidated the account/scenario UI under `ProfileDetailPage`, added clone endpoints for profiles/accounts/scenarios, and added a smart health-monitor with auto-backoff polling. Test counts: 149 backend tests + 42 frontend tests green.
 
-**Active work:** Between phases. Next is **Phase 5 (Scenario Comparison & Reporting)** — see Phase 5 section below. Most user-impactful feature in Phase 5 is RMDs (currently not modeled; mandatory for retirees at age 73+). Phase 4.8 verification incidentally confirmed the side-by-side scenario comparison feature is *more* valuable than originally estimated — TAX_OPTIMIZED is not always lower-tax than PROPORTIONAL (heavy traditional draws after the brokerage tier empties can push more SS into the 85% taxable tier), so the "right" ordering is genuinely scenario-dependent.
+**Active work:** Phase 5 continues. Open items (deliberately left for user direction before scheduling): side-by-side comparison view, overlay charts, "what-if" clone-and-tweak flow (cloning groundwork already in place from the May-3 sweep), PDF / CSV export. User indicated they may want to introduce other features before resuming the rest of Phase 5.
 
 **Deviations from original plan to keep in mind:**
 - Phase 1's "in-memory storage" interim was skipped — went straight to Postgres + JPA + Flyway.
@@ -292,22 +292,44 @@ Tax-aware withdrawal ordering can change a 30-year retirement's lifetime tax bil
 
 ---
 
-## Phase 5 — Scenario Comparison & Reporting
+## Phase 4.9 — UI consolidation & cloning ✅ (May 2026, retrospective)
 
-**Goal:** Allow users to compare multiple scenarios and export results.
+Captured here for plan completeness — this work landed in commit `c9d8745` on 2026-05-03 but wasn't in the plan at the time.
 
-### Scenario comparison
+- [x] Frontend pages collapsed: `AccountsPage` and `ScenariosPage` removed; accounts and scenarios now managed inside `ProfileDetailPage` (eliminates two top-level routes and one round-trip per CRUD action). Routes now: `/` → `/profiles/:id` → `/scenarios/:id` → `/simulations/:id`.
+- [x] Cloning: `POST /api/users/{id}/clone` (deep-copies the profile + its accounts + scenarios + scenario income sources, with optional overrides), plus equivalent endpoints for individual accounts and scenarios. Provides the groundwork for the Phase 5 "what-if" clone-and-tweak flow.
+- [x] Health monitor (`frontend/src/healthMonitor.ts`) — singleton with 60-second backoff polling that pauses when the backend is up, resumes when an axios error suggests it might be down. Replaces the always-on chip polling.
+- [x] Bug fixes: `MonteCarloEngine.computeMedianYearsOfSurvival` empty-list crash (pulled forward from Phase 6).
+
+---
+
+## Phase 5 — Scenario Comparison & Reporting 🚧
+
+**Goal:** Allow users to compare multiple scenarios, model RMDs correctly past 73/75, and export results.
+
+### Phase 5.1 — Required Minimum Distributions ✅ (May 2026)
+
+Forces minimum withdrawals from Traditional 401(k) + Traditional IRA starting at the SECURE 2.0 RMD age (73 for DOB year ≤ 1959, 75 for ≥ 1960). The pre-Phase-5 engine assumed retirees could leave Traditional balances untouched indefinitely under TAX_OPTIMIZED ordering — that's not how the law works.
+
+- [x] `RmdCalculator` Spring component with the IRS Uniform Lifetime Table (ages 72–120+, IRS Pub. 590-B post-2022 update) and the SECURE 2.0 start-age rule. Joint Life Table intentionally not modeled (would require spouse DOB).
+- [x] `SimulationEngine` integration: at each Jan 1 (and sim start mid-year) computes `annualRmd = priorYearEndTraditionalBalance / uniformDivisor(ageAttainedThisYear)` aggregated across Traditional accounts. Strategy-driven Traditional withdrawals during the year decrement the obligation; any shortfall is force-drained in December (proportional within Traditional tier). Mirrors the SS earnings-test pattern that already lives in the engine.
+- [x] **Excess RMD cash lands in Savings** — gross forced amount deposits into the first existing SAVINGS account; if none exists, the engine creates an **in-memory synthetic** Savings account that lives only for the simulation (not persisted, not visible to the user). Per design decision: preserves net wealth for users whose income covers expenses (CASHFLOW_TARGET with surplus income).
+- [x] `YearlyProjection.yearRmd` field surfaces the per-year amount; frontend year-by-year table gets a new "RMD" column with a tooltip explaining the SECURE 2.0 rule.
+- [x] V008 migration truncates `simulation_results` (JSON shape changed — same pattern as V003 / V005 / V007).
+- [x] **Documented simplifications:** Traditional 401(k) is aggregated with Traditional IRA for the obligation (IRS allows IRA aggregation; we extend to 401(k)). First-year April-1 deferral not modeled (users overwhelmingly take RMDs in the attainment year). On sim-start mid-year, current balance proxies for prior-Dec-31 — slight overstatement of forced-Traditional drain in the partial first year.
+- [x] Tests: 11 RmdCalculator unit tests (table lookups, edge cases, SECURE 2.0 age cutoff), 5 engine integration tests (pre-RMD-age zero check, TAX_OPTIMIZED still drains Traditional past 73, CASHFLOW_TARGET surplus triggers synthetic-Savings, Uniform Lifetime formula match, deposits into existing Savings). Existing realistic-MFJ test still passes >10% PROPORTIONAL/TAX_OPTIMIZED tax differential with RMDs now active for ages 73-90.
+
+### Remaining Phase 5 (not yet scheduled)
 - [ ] Side-by-side comparison view for 2–4 scenarios
 - [ ] Overlay charts: portfolio balance, success probability, lifetime tax burden
-- [ ] "What-if" mode: clone a scenario, tweak one parameter, re-run
-- [ ] Required Minimum Distribution (RMD) handling — withdrawals from pre-tax accounts at age 73+
+- [ ] "What-if" mode UI: clone a scenario, tweak one parameter, re-run (cloning API is in place from Phase 4.9)
 
 ### Reporting
 - [ ] Export simulation results as PDF
 - [ ] Export raw data as CSV
 - [ ] Optional: shareable read-only link for advisor review
 
-**Deliverable:** Users can compare scenarios visually and generate shareable reports.
+**Deliverable:** Users can model RMD-driven taxes correctly past age 73/75, compare scenarios visually, and generate shareable reports.
 
 ---
 
@@ -399,7 +421,9 @@ Not scheduled. Prioritized based on user feedback.
 | 2     | Simulation Engine                        | ✅ done                | —                     |
 | 3     | Persistence & User Management            | ✅ done (cleanup done) | —                     |
 | 4     | Enhanced Tax & Withdrawal Optimization   | ✅ done                | —                     |
-| 5     | Scenario Comparison & Reporting          | ⏳ next                | 2–3 weeks             |
+| 4.9   | UI consolidation & cloning               | ✅ done                | —                     |
+| 5.1   | RMDs                                     | ✅ done                | —                     |
+| 5     | Comparison view, what-if mode, reporting | 🚧 in progress         | 1–2 weeks remaining   |
 | 6     | Production Readiness                     | ⏳ planned             | 2–3 weeks             |
 | 7+    | Future Enhancements                      | ♾  backlog             | ongoing               |
 

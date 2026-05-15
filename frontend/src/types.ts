@@ -89,6 +89,7 @@ export interface YearlyProjection {
   yearTaxableSocialSecurity: number;
   yearOrdinaryTax: number;
   yearCapitalGainsTax: number;
+  yearRmd: number;
   inflationFactor: number;
 }
 

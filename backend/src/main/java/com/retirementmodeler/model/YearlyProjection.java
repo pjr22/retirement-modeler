@@ -21,6 +21,10 @@ import java.time.LocalDate;
  *       flows into {@code yearOrdinaryIncome} per the IRS provisional-income test.
  *   <li>{@code yearOrdinaryTax}, {@code yearCapitalGainsTax} — the two halves of {@code yearTax};
  *       their sum equals {@code yearTax}.
+ *   <li>{@code yearRmd} (Phase 5) — total Required Minimum Distribution taken from Traditional
+ *       accounts in the year. Zero pre-RMD-age. RMD-driven withdrawals are already included in
+ *       {@code yearWithdrawals} and {@code yearOrdinaryIncome}; this field surfaces what portion
+ *       was forced by the RMD rule rather than chosen by the withdrawal strategy.
  * </ul>
  */
 public record YearlyProjection(
@@ -37,4 +41,5 @@ public record YearlyProjection(
     BigDecimal yearOrdinaryTax,
     BigDecimal yearCapitalGainsTax,
     BigDecimal yearTax,
+    BigDecimal yearRmd,
     BigDecimal inflationFactor) {}

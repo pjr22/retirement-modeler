@@ -86,6 +86,7 @@ const sampleSimulation = {
       yearTaxableSocialSecurity: 0,
       yearOrdinaryTax: 0,
       yearCapitalGainsTax: 0,
+      yearRmd: 0,
       inflationFactor: 1,
     },
     {
@@ -102,6 +103,7 @@ const sampleSimulation = {
       yearTaxableSocialSecurity: 0,
       yearOrdinaryTax: 0,
       yearCapitalGainsTax: 0,
+      yearRmd: 0,
       inflationFactor: 2.3,
     },
     {
@@ -118,6 +120,7 @@ const sampleSimulation = {
       yearTaxableSocialSecurity: 0,
       yearOrdinaryTax: 200000,
       yearCapitalGainsTax: 64000,
+      yearRmd: 42500,
       inflationFactor: 4.5,
     },
   ],
@@ -237,6 +240,28 @@ describe("SimulationResultsPage", () => {
     });
     // Lifetime tax for the deterministic series is 0 + 0 + 264000 = $264,000.
     expect(screen.getByText("$264,000")).toBeInTheDocument();
+  });
+
+  it("shows the RMD column in the year-by-year table sourced from yearRmd", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
+    vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
+
+    renderWithRouter(<SimulationResultsPage />, {
+      route: "/simulations/sim-1",
+      path: "/simulations/:simulationId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Show Table")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Show Table"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("columnheader", { name: /RMD/ })).toBeInTheDocument();
+    });
+    // Row at age 90 carries yearRmd = $42,500 in the fixture.
+    expect(screen.getByText("$42,500")).toBeInTheDocument();
   });
 
   it("shows separate Ordinary Tax and Capital Gains Tax columns in the year-by-year table", async () => {

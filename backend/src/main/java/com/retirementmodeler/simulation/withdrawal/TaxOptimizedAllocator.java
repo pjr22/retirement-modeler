@@ -27,9 +27,10 @@ import java.util.UUID;
  * in the table above (none today, but defensive against future enum additions) get a final fallback
  * tier.
  *
- * <p>RMDs are <em>not</em> modeled here (Phase 5). A retiree subject to RMDs may need to pull from
- * tax-deferred accounts before this strategy would otherwise dictate; treat the strategy as a
- * best-effort heuristic until RMD logic lands.
+ * <p>RMD interaction: starting at the SECURE 2.0 RMD age (73 for DOB ≤ 1959, 75 for ≥ 1960), the
+ * engine forces a minimum draw from Traditional accounts each calendar year regardless of what this
+ * strategy would otherwise dictate. The allocator itself stays unchanged — see {@link
+ * com.retirementmodeler.simulation.SimulationEngine} for the RMD top-up logic.
  */
 public class TaxOptimizedAllocator implements WithdrawalAllocator {
 
