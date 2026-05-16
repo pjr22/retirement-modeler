@@ -37,9 +37,28 @@ public class TaxCalculator {
       BigDecimal ordinaryIncome,
       BigDecimal longTermCapitalGains,
       TaxBrackets brackets) {
+    return compute(status, ordinaryIncome, longTermCapitalGains, brackets, null);
+  }
+
+  /**
+   * Same as {@link #compute(FilingStatus, BigDecimal, BigDecimal, TaxBrackets)} but lets the caller
+   * supply an itemized deduction amount. The actual deduction used is {@code max(standardDeduction,
+   * itemizedDeduction)} — i.e. the IRS rule of taking whichever is larger. Pass {@code null} for
+   * the standard-deduction-only path.
+   */
+  public TaxResult compute(
+      FilingStatus status,
+      BigDecimal ordinaryIncome,
+      BigDecimal longTermCapitalGains,
+      TaxBrackets brackets,
+      BigDecimal itemizedDeduction) {
     BigDecimal ordinary = nonNegative(ordinaryIncome);
     BigDecimal ltcg = nonNegative(longTermCapitalGains);
-    BigDecimal deduction = brackets.standardDeductionFor(status);
+    BigDecimal standardDeduction = brackets.standardDeductionFor(status);
+    BigDecimal deduction =
+        itemizedDeduction != null && itemizedDeduction.compareTo(standardDeduction) > 0
+            ? itemizedDeduction
+            : standardDeduction;
 
     BigDecimal totalTaxable = ordinary.add(ltcg).subtract(deduction).max(BigDecimal.ZERO);
     BigDecimal taxableOrdinary = ordinary.subtract(deduction).max(BigDecimal.ZERO);

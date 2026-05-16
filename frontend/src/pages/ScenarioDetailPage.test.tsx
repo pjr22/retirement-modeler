@@ -16,6 +16,11 @@ vi.mock("../api", () => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  listProperties: vi.fn(),
+  createProperty: vi.fn(),
+  updateProperty: vi.fn(),
+  deleteProperty: vi.fn(),
+  cloneProperty: vi.fn(),
   listIncomeSources: vi.fn(),
   createIncomeSource: vi.fn(),
   updateIncomeSource: vi.fn(),
@@ -44,6 +49,7 @@ import {
   getScenario,
   getUserProfile,
   listAccounts,
+  listProperties,
   listIncomeSources,
   createIncomeSource,
   deleteIncomeSource,
@@ -67,6 +73,7 @@ const sampleScenario = {
   name: "Conservative",
   description: "Low risk approach",
   accountIds: ["acc-1"],
+  propertyIds: [],
   assumptions: {
     expectedRateOfReturn: 0.05,
     inflationRate: 0.03,
@@ -115,6 +122,7 @@ describe("ScenarioDetailPage", () => {
     vi.clearAllMocks();
     vi.mocked(listIncomeSources).mockResolvedValue(axiosOk([]));
     vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(listProperties).mockResolvedValue(axiosOk([]));
   });
 
   it("loads and displays an existing scenario", async () => {

@@ -2,6 +2,7 @@ import axios from "axios";
 import type {
   UserProfile,
   Account,
+  Property,
   IncomeSource,
   Scenario,
   SimulationResult,
@@ -82,6 +83,18 @@ export const createAccount = (profileId: string, account: Omit<Account, "id" | "
 export const updateAccount = (id: string, account: Omit<Account, "id" | "userProfileId">) =>
   api.put<Account>(`/api/accounts/${id}`, account);
 export const deleteAccount = (id: string) => api.delete(`/api/accounts/${id}`);
+
+export const listProperties = (profileId: string) =>
+  api.get<Property[]>(`/api/users/${profileId}/properties`);
+export const createProperty = (
+  profileId: string,
+  property: Omit<Property, "id" | "userProfileId">,
+) => api.post<Property>(`/api/users/${profileId}/properties`, property);
+export const updateProperty = (id: string, property: Omit<Property, "id" | "userProfileId">) =>
+  api.put<Property>(`/api/properties/${id}`, property);
+export const deleteProperty = (id: string) => api.delete(`/api/properties/${id}`);
+export const cloneProperty = (id: string, overrides?: Partial<Property>) =>
+  api.post<Property>(`/api/properties/${id}/clone`, overrides ?? {});
 
 export const listIncomeSources = (scenarioId: string) =>
   api.get<IncomeSource[]>(`/api/scenarios/${scenarioId}/incomeSources`);

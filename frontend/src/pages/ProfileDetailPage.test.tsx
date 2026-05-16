@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithRouter, axiosOk } from "../test/helpers";
 
@@ -22,6 +22,11 @@ vi.mock("../api", () => ({
   createAccount: vi.fn(),
   updateAccount: vi.fn(),
   deleteAccount: vi.fn(),
+  listProperties: vi.fn(),
+  createProperty: vi.fn(),
+  updateProperty: vi.fn(),
+  deleteProperty: vi.fn(),
+  cloneProperty: vi.fn(),
   listIncomeSources: vi.fn(),
   createIncomeSource: vi.fn(),
   updateIncomeSource: vi.fn(),
@@ -52,6 +57,9 @@ import {
   listAccounts,
   createAccount,
   deleteAccount,
+  listProperties,
+  createProperty,
+  deleteProperty,
   listScenarios,
   deleteScenario,
   runSimulation,
@@ -92,6 +100,7 @@ const sampleScenarios = [
     name: "Baseline",
     description: "All-in plan",
     accountIds: ["acc-1"],
+    propertyIds: [],
     assumptions: {
       expectedRateOfReturn: 0.07,
       inflationRate: 0.03,
@@ -106,10 +115,32 @@ const sampleScenarios = [
   },
 ];
 
+const sampleProperty = {
+  id: "prop-1",
+  userProfileId: "prof-1",
+  name: "Primary residence",
+  type: "PRIMARY_RESIDENCE" as const,
+  currentValue: 750000,
+  costBasis: 400000,
+  mortgageBalance: 250000,
+  mortgageAnnualRate: 0.0625,
+  mortgageMonthlyPi: 1850,
+  mortgageStartDate: null,
+  mortgageTermYears: 30,
+  plannedSaleDate: null,
+  postSaleMonthlyHousingCost: 0,
+  annualPropertyTax: 8000,
+  annualInsurance: 1500,
+  monthlyHoa: 0,
+  annualMaintenancePct: 0.01,
+  sellingCostPct: 0.06,
+};
+
 describe("ProfileDetailPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listAccounts).mockResolvedValue(axiosOk([]));
+    vi.mocked(listProperties).mockResolvedValue(axiosOk([]));
     vi.mocked(listScenarios).mockResolvedValue(axiosOk([]));
   });
 
@@ -419,6 +450,238 @@ describe("ProfileDetailPage", () => {
           annualContribution: 23000,
         }),
       );
+    });
+  });
+
+  it("lists properties inline with value, mortgage balance, and equity", async () => {
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(listProperties).mockResolvedValue(axiosOk([sampleProperty]));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Primary residence")).toBeInTheDocument();
+      expect(screen.getByText("Primary Residence")).toBeInTheDocument();
+      expect(screen.getByText("$750,000")).toBeInTheDocument();
+      expect(screen.getByText("$250,000")).toBeInTheDocument();
+      // Equity = 750,000 - 250,000
+      expect(screen.getByText("$500,000")).toBeInTheDocument();
+    });
+  });
+
+  it("opens an empty property dialog and creates a property", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(createProperty).mockResolvedValue(axiosOk(sampleProperty));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Property")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Add Property"));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: /property name/i }),
+      "My House",
+    );
+
+    const addBtn = within(dialog)
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Add");
+    await user.click(addBtn!);
+
+    await waitFor(() => {
+      expect(createProperty).toHaveBeenCalledWith(
+        "prof-1",
+        expect.objectContaining({ name: "My House", type: "PRIMARY_RESIDENCE" }),
+      );
+    });
+  });
+
+  it("auto-calculates Principal and Interest from balance, rate, and term", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(createProperty).mockResolvedValue(axiosOk(sampleProperty));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Property")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Property"));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: /property name/i }),
+      "House",
+    );
+    fireEvent.change(within(dialog).getByRole("spinbutton", { name: /current balance/i }), {
+      target: { value: "250000" },
+    });
+    // Interest Rate is type="number" with step=0.0005 (for spinner arrows) and string-typed form
+    // state. The string-typed state avoids the Number()-on-change zero-collapse that would break
+    // decimal typing like "0.0625".
+    fireEvent.change(within(dialog).getByRole("spinbutton", { name: /interest rate \(apr\)/i }), {
+      target: { value: "0.0625" },
+    });
+    // Term defaults to 30; computed P+I for $250K @ 6.25% / 30yr ≈ $1,539.29
+    await waitFor(() => {
+      expect(within(dialog).getByDisplayValue(/\$1,5[0-9]{2}\./)).toBeInTheDocument();
+    });
+
+    const addBtn = within(dialog)
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Add");
+    await user.click(addBtn!);
+
+    await waitFor(() => {
+      expect(createProperty).toHaveBeenCalledWith(
+        "prof-1",
+        expect.objectContaining({
+          mortgageBalance: 250000,
+          mortgageAnnualRate: 0.0625,
+          // 30-year amortization closed-form. Allow rounding.
+          mortgageMonthlyPi: expect.closeTo(1539.29, 0),
+        }),
+      );
+    });
+  });
+
+  it("uses mortgage start date + term to derive remaining months for P+I", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(createProperty).mockResolvedValue(axiosOk(sampleProperty));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Property")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Property"));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: /property name/i }), "House");
+    // Mortgage that started 5 years before "today" (the test runs at a clock that has 2026-05-15
+    // as Today; the calendar arithmetic is `(termYears * 12) - elapsed_months`).
+    fireEvent.change(within(dialog).getByLabelText(/mortgage start date/i), {
+      target: { value: "2021-05-15" },
+    });
+    fireEvent.change(within(dialog).getByRole("spinbutton", { name: /mortgage term \(years\)/i }), {
+      target: { value: "30" },
+    });
+    fireEvent.change(within(dialog).getByRole("spinbutton", { name: /current balance/i }), {
+      target: { value: "415000" },
+    });
+    fireEvent.change(within(dialog).getByRole("spinbutton", { name: /interest rate \(apr\)/i }), {
+      target: { value: "0.0285" },
+    });
+
+    const addBtn = within(dialog)
+      .getAllByRole("button")
+      .find((b) => b.textContent === "Add");
+    await user.click(addBtn!);
+
+    await waitFor(() => {
+      expect(createProperty).toHaveBeenCalled();
+    });
+    const payload = vi.mocked(createProperty).mock.calls[0][1];
+    expect(payload).toMatchObject({
+      mortgageStartDate: "2021-05-15",
+      mortgageTermYears: 30,
+      mortgageBalance: 415000,
+      mortgageAnnualRate: 0.0285,
+    });
+    // $415K @ 2.85% over remaining ~25 years (300 months) ≈ $1,930-$1,940. Use a generous band
+    // so the test doesn't flake as the wall clock drifts month-to-month past the test fixture.
+    expect(payload.mortgageMonthlyPi).toBeGreaterThan(1500);
+    expect(payload.mortgageMonthlyPi).toBeLessThan(2500);
+  });
+
+  it("disables Replacement Housing Cost until a Planned Sale Date is entered", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Property")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Property"));
+
+    const dialog = await screen.findByRole("dialog");
+    const replacementCost = within(dialog).getByRole("spinbutton", {
+      name: /replacement housing/i,
+    });
+    expect(replacementCost).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(/planned sale date/i), {
+      target: { value: "2040-06-01" },
+    });
+    await waitFor(() => {
+      expect(replacementCost).not.toBeDisabled();
+    });
+  });
+
+  it("shows em-dash for Principal and Interest when there is no mortgage", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Add Property")).toBeInTheDocument();
+    });
+    await user.click(screen.getByText("Add Property"));
+
+    const dialog = await screen.findByRole("dialog");
+    const piField = within(dialog).getByRole("textbox", { name: /principal and interest/i });
+    expect(piField).toHaveValue("—");
+  });
+
+  it("deletes a property", async () => {
+    const user = userEvent.setup();
+    vi.mocked(getUserProfile).mockResolvedValue(axiosOk(sampleProfile));
+    vi.mocked(listProperties).mockResolvedValue(axiosOk([sampleProperty]));
+    vi.mocked(deleteProperty).mockResolvedValue(axiosOk(undefined));
+
+    renderWithRouter(<ProfileDetailPage />, {
+      route: "/profiles/prof-1",
+      path: "/profiles/:profileId",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Primary residence")).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen
+      .getAllByRole("button")
+      .find((b) => b.querySelector('[data-testid="DeleteIcon"]'));
+    expect(deleteBtn).toBeDefined();
+    await user.click(deleteBtn!);
+
+    await waitFor(() => {
+      expect(deleteProperty).toHaveBeenCalledWith("prop-1");
     });
   });
 

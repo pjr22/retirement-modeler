@@ -167,7 +167,12 @@ export default function ProfilesPage() {
 
       <Dialog open={dialogMode !== null} onClose={closeDialog} maxWidth="sm" fullWidth>
         <DialogTitle>{dialogTitle}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+        {/* Inline `style` to beat MUI's `.MuiDialogTitle-root + .MuiDialogContent-root
+            { padding-top: 0 }` rule — otherwise the first row's floating labels get clipped. */}
+        <DialogContent
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+          style={{ paddingTop: 10 }}
+        >
           {dialogMode?.kind === "clone" && (
             <Typography variant="body2" color="text.secondary">
               Accounts, scenarios, and income sources will be copied from the source profile.

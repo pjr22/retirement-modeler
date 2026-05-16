@@ -21,6 +21,8 @@ export type IncomeType =
   | "RENTAL"
   | "OTHER";
 
+export type PropertyType = "PRIMARY_RESIDENCE" | "RENTAL" | "SECOND_HOME" | "LAND";
+
 export type WithdrawalStrategy = "PORTFOLIO_PERCENTAGE" | "CASHFLOW_TARGET";
 
 export type WithdrawalOrderingStrategy = "PROPORTIONAL" | "TAX_OPTIMIZED" | "CUSTOM";
@@ -54,6 +56,27 @@ export interface Account {
   annualContribution: number | null;
 }
 
+export interface Property {
+  id: string;
+  userProfileId: string;
+  name: string;
+  type: PropertyType;
+  currentValue: number;
+  costBasis: number;
+  mortgageBalance: number;
+  mortgageAnnualRate: number;
+  mortgageMonthlyPi: number;
+  mortgageStartDate: string | null;
+  mortgageTermYears: number | null;
+  plannedSaleDate: string | null;
+  postSaleMonthlyHousingCost: number;
+  annualPropertyTax: number;
+  annualInsurance: number;
+  monthlyHoa: number;
+  annualMaintenancePct: number;
+  sellingCostPct: number | null;
+}
+
 export interface SimulationAssumptions {
   expectedRateOfReturn: number;
   inflationRate: number;
@@ -72,6 +95,7 @@ export interface Scenario {
   name: string;
   description: string | null;
   accountIds: string[];
+  propertyIds: string[];
   assumptions: SimulationAssumptions;
 }
 
@@ -90,6 +114,13 @@ export interface YearlyProjection {
   yearOrdinaryTax: number;
   yearCapitalGainsTax: number;
   yearRmd: number;
+  yearMortgageInterest: number;
+  yearPropertyTaxPaid: number;
+  yearHousingExpenses: number;
+  yearSaleProceedsNet: number;
+  yearSaleCapitalGains: number;
+  yearPropertyValueTotal: number;
+  yearDeduction: number;
   inflationFactor: number;
 }
 

@@ -6,11 +6,13 @@ A living plan. Update as work lands. `[x]` = done, `[ ]` = not done.
 
 ## Status
 
-**Last updated:** 2026-05-14
+**Last updated:** 2026-05-15
 
-**Current state:** Phases 0–4 complete; Phase 5 in progress. RMDs (Phase 5.1) landed today — see Phase 5 section below. Also reflects the 2026-05-03 "Bug fixes and UI improvements" sweep that consolidated the account/scenario UI under `ProfileDetailPage`, added clone endpoints for profiles/accounts/scenarios, and added a smart health-monitor with auto-backoff polling. Test counts: 149 backend tests + 42 frontend tests green.
+**Current state:** Phases 0–4 complete; Phase 5 in progress. Phase 5.2 (Real Property) substantially landed across two slices over 2026-05-14 → 2026-05-15: Slice 1 added the `Property` entity, CRUD + clone API, profile-page UI section, and dialog with derived P+I from mortgage-start-date + term. Slice 2 added per-property selling-cost pct, scenario-level property inclusion, the `MortgageAmortizer` helper, engine integration (property growth + mortgage amortization + housing expenses + sale events with §121 exclusion + post-sale replacement housing cost), itemized-vs-standard deduction with SALT cap in the tax pipeline, 7 new `YearlyProjection` fields, and frontend results-page columns + Final Net Worth stat card. Test counts: 178 backend + 49 frontend tests green.
 
-**Active work:** Phase 5 continues. Open items (deliberately left for user direction before scheduling): side-by-side comparison view, overlay charts, "what-if" clone-and-tweak flow (cloning groundwork already in place from the May-3 sweep), PDF / CSV export. User indicated they may want to introduce other features before resuming the rest of Phase 5.
+**Reverse mortgage support deferred** from the original Slice 2 plan to a follow-up — the data model for that hasn't been added; users wanting reverse-mortgage income today can model it manually with an `IncomeSource`.
+
+**Active work:** Remaining Phase 5 items deferred for user direction: side-by-side comparison view, overlay charts, "what-if" clone-and-tweak flow, PDF / CSV export. Reverse mortgage follow-up is queued.
 
 **Deviations from original plan to keep in mind:**
 - Phase 1's "in-memory storage" interim was skipped — went straight to Postgres + JPA + Flyway.
@@ -319,6 +321,148 @@ Forces minimum withdrawals from Traditional 401(k) + Traditional IRA starting at
 - [x] **Documented simplifications:** Traditional 401(k) is aggregated with Traditional IRA for the obligation (IRS allows IRA aggregation; we extend to 401(k)). First-year April-1 deferral not modeled (users overwhelmingly take RMDs in the attainment year). On sim-start mid-year, current balance proxies for prior-Dec-31 — slight overstatement of forced-Traditional drain in the partial first year.
 - [x] Tests: 11 RmdCalculator unit tests (table lookups, edge cases, SECURE 2.0 age cutoff), 5 engine integration tests (pre-RMD-age zero check, TAX_OPTIMIZED still drains Traditional past 73, CASHFLOW_TARGET surplus triggers synthetic-Savings, Uniform Lifetime formula match, deposits into existing Savings). Existing realistic-MFJ test still passes >10% PROPORTIONAL/TAX_OPTIMIZED tax differential with RMDs now active for ages 73-90.
 
+### Phase 5.2 — Real Property ✅ (Slices 1 + 2 landed May 2026; reverse-mortgage support deferred)
+
+**Departures from the original plan to keep in mind:**
+- **No `PropertyDecision` entity.** The original plan parked sale-event and reverse-mortgage fields on a per-scenario `PropertyDecision`. We collapsed those onto `Property` itself (default values) for now — `plannedSaleDate`, `postSaleMonthlyHousingCost`, `sellingCostPct` live on the entity. Scenarios pick which properties to include via `Scenario.propertyIds`. "What-if" comparisons (keep vs sell at different dates) currently require cloning the property; a true per-scenario override layer can come later if there's demand.
+- **Replaced "Remaining Term" UI input with start-date + term.** Users enter `mortgageStartDate` + `mortgageTermYears`; the engine derives remaining months and the monthly P+I. Cleaner than asking the user to do calendar math.
+- **Added `postSaleMonthlyHousingCost` field.** Not in the original plan — the user pointed out that selling a primary residence implies needing replacement housing (rent, long-term care, or $0 if living with family). Now an explicit field on the property; engine treats it as a mandatory expense after sale, inflation-adjusted from today's-dollars.
+- **Reverse mortgage support deferred.** Original plan had a simplified-HECM in this phase; not implemented. No data model added yet.
+- Migrations landed across **V009 + V010 + V011** (rather than the originally-planned single V009/V010 pair), each truncating `simulation_results` when the `YearlyProjection` shape changed.
+
+**The original plan content below remains for reference; check-marks reflect what landed.**
+
+
+
+**Goal:** Add property ownership as a first-class profile-level entity (primary residence / rental / second home / land). Surface property value in net worth; model housing as mandatory monthly cashflow (mortgage P+I, property tax, insurance, HOA, maintenance); allow optional sale events per scenario (with §121 capital-gains exclusion for primary residence); allow optional simplified reverse mortgage; switch the tax pipeline from standard-deduction-only to greater-of-standard-or-itemized (mortgage interest + property tax under SALT cap).
+
+#### Why now
+The engine handles every income/expense flow except housing. For most retirees, housing is the largest non-portfolio asset and the largest recurring expense — projections that ignore it materially mis-state cashflow and net worth at death.
+
+#### Domain model
+
+**New entity `Property` (profile-level, mirrors `Account`):**
+- `id`, `userProfileId`, `name`
+- `type: PropertyType { PRIMARY_RESIDENCE | RENTAL | SECOND_HOME | LAND }`
+- `currentValue`, `costBasis` (original purchase + improvements — for §121 / cap-gains)
+- Mortgage: `mortgageBalance`, `mortgageAnnualRate`, `mortgageMonthlyPi` (all 0 = no mortgage). **Payoff date is derived** from balance amortized at rate by P+I and shown in the UI for user validation — not stored. Rationale: P+I is on every mortgage statement; user-supplied payoff dates are often inconsistent with the other three (escrow, extra principal, etc.).
+- Expenses: `annualPropertyTax`, `annualInsurance`, `monthlyHoa`, `annualMaintenancePct` (default 0.01 = 1% of value/yr).
+- All of value / tax / insurance / HOA / maintenance grow at the scenario's general inflation rate. No per-property growth override in v1.
+
+**New entity `PropertyDecision` (per scenario × property override):**
+- `id`, `scenarioId`, `propertyId`
+- Sale event: `saleDate?`, `sellingCostPct?` (default 0.06), `saleDestinationAccountId?` (null → first SAVINGS, synthetic if none)
+- Reverse mortgage: `reverseMortgageStartDate?`, `reverseMortgageMonthlyDraw?`, `reverseMortgageAnnualRate?` (default 0.06). Draws auto-stop when equity hits 0.
+- Constraints enforced at engine entry: reverse mortgage only on `PRIMARY_RESIDENCE` and only takes effect once primary mortgage is paid off (HECM lender rule). If both sale and reverse mortgage set, sale wins.
+
+**Scenario inclusion:** `Scenario` gets `List<UUID> propertyIds` mirroring `accountIds`. Scenario create defaults to all profile properties selected.
+
+The original "adjust monthly income down when mortgage is paid" flag is dropped — redundant once expenses are modeled explicitly. The "use home equity for income" flag becomes the `PropertyDecision.reverseMortgage*` fields.
+
+#### Migrations
+- **V009** — `properties` table.
+- **V010** — `property_decisions` (with `UNIQUE(scenario_id, property_id)`) + `scenario_properties` join table + `TRUNCATE simulation_results` (YearlyProjection shape changes — same pattern as V003 / V008).
+
+#### API
+Property CRUD (profile-level): `POST /api/users/{profileId}/properties`, `GET .../properties`, `PUT /api/properties/{id}`, `DELETE /api/properties/{id}`, `POST /api/properties/{id}/clone`.
+
+PropertyDecision CRUD (scenario-level, mirrors IncomeSource): `POST /api/scenarios/{scenarioId}/propertyDecisions`, `GET .../propertyDecisions`, `PUT /api/propertyDecisions/{id}`, `DELETE /api/propertyDecisions/{id}`.
+
+Scenario create/update body adds `propertyIds`. Scenario clone deep-copies property decisions (also fixes the same gap that exists for income sources today).
+
+#### SimulationEngine changes
+
+**New `MortgageAmortizer` helper** (extracted for testability):
+```
+monthlyInterest = balance × rate / 12
+monthlyPrincipal = min(monthlyPI − monthlyInterest, balance)
+newBalance = balance − monthlyPrincipal
+```
+Last month naturally trues up. Negative-amortization (monthlyInterest > monthlyPI) logs a warning and stops paying — frontend already warns on input.
+
+**Per-month loop additions** (inserted between current "income" and "withdrawals" steps):
+
+1. *Property growth.* At each calendar-year boundary, multiply `currentValue` and cached monthly tax/insurance/HOA/maintenance by `(1 + inflationRate)`. Mortgage P+I is fixed nominal (contractual). Reverse-mortgage monthly draw also fixed nominal (user-specified).
+2. *Mortgage step.* Amortize one month per property; accumulate `yearMortgageInterest`. P+I stops permanently when balance hits 0.
+3. *Housing expenses to fund.* Per active property: `expense = actualMortgagePayment + monthlyPropertyTax + monthlyInsurance + monthlyHoa + currentValue × annualMaintenancePct / 12`. **Mandatory pre-strategy outflows.** Funding order: (a) net against `monthIncome` first; (b) remaining shortfall drains accounts via the user's `WithdrawalOrderingStrategy` (reuses existing allocator — same path as discretionary withdrawals); (c) if accounts can't cover, expense recorded and balances go negative (same depletion behavior as today's withdrawals).
+4. *Reverse mortgage step.* If `reverseMortgageStartDate ≤ currentMonth` AND primary mortgage paid off AND property not sold AND `equity = currentValue − reverseMortgageBalance > 0`:
+   ```
+   draw = min(monthlyDraw, equity)
+   monthIncome += draw                      // NON-TAXABLE — loan proceeds aren't income
+   reverseMortgageBalance += draw
+   reverseMortgageBalance ×= (1 + rate/12)  // compound monthly
+   ```
+5. *Sale event.* When `saleDate` reached (uses existing `transitionStart` rule):
+   ```
+   grossProceeds = currentValue × (1 − sellingCostPct)
+   netProceeds = grossProceeds − mortgageBalance − reverseMortgageBalance
+   gain = max(0, grossProceeds − costBasis)
+   if PRIMARY_RESIDENCE:
+       exclusion = (MFJ ? 500_000 : 250_000) × inflationFactor
+       taxableGain = max(0, gain − exclusion)
+   else: taxableGain = gain
+   yearCapitalGainsFromWithdrawals += taxableGain   // flows into existing LTCG path
+   balances[saleDestination] += netProceeds
+   property.sold = true; currentValue = 0; ...
+   ```
+
+**Tax pipeline: itemize-vs-standard.** `TaxCalculator.compute` gains an `itemizedDeduction` parameter (engine computes it; calculator stays pure):
+```
+salt = min(yearPropertyTax_sum, SALT_CAP)        // 2026 SALT cap = $40,000 per OBBBA
+itemized = yearMortgageInterest + salt
+deduction = max(standardDeductionFor(status), itemized)
+```
+Replaces the standard-deduction-only logic at `TaxCalculator.compute` lines 42–46. The "deduction spills onto LTCG" rule already in place generalizes automatically. Add `saltCap` to `FederalTaxBrackets2026`.
+
+**`YearlyProjection` additions:** `yearMortgageInterest`, `yearPropertyTax`, `yearHousingExpenses`, `yearReverseMortgageIncome`, `yearSaleProceedsNet`, `yearSaleCapitalGains`, `yearPropertyValueTotal`, `yearItemizedDeduction`, `yearStandardDeduction`. V010 truncates `simulation_results`.
+
+#### Frontend
+- **`ProfileDetailPage`** — new "Real Property" section: table (Name, Type, Value, Mortgage Balance, Equity) + Add/Edit/Delete dialog with collapsible Basic / Mortgage / Expenses sections, derived payoff date shown read-only. Validation: cost basis ≤ value (warning); P+I × 12 vs interest-only (warning if it'll never amortize).
+- **`ScenarioDetailPage`** — property inclusion checkboxes (mirrors account inclusion) + "Property Decisions" sub-section (mirrors Income Sources): per-included-property card with collapsible Sale and Reverse Mortgage panels.
+- **`SimulationResultsPage`** — 4 new collapsible year-by-year columns (Property Value, Mortgage Interest, Housing Expense, Sale Proceeds); new **Final Net Worth** stat card = final balance + final property values; assumptions row "Standard Deduction" becomes "Deduction (greater of std/itemized)".
+- **`types.ts`** — `Property`, `PropertyType`, `PropertyDecision`; extend `YearlyProjection`.
+
+#### Tests
+
+Backend:
+- PropertyController + PropertyDecisionController CRUD with auth-isolation tests.
+- `MortgageAmortizer` unit tests: 30-yr $500K @ 6% ≈ $2,997.75/mo, payoff at month 360, interest sum matches IRS schedule to the cent.
+- `SimulationEngine` integration tests:
+  - Property no mortgage: value grows with inflation; expenses drain savings; no mortgage interest in tax.
+  - Property with mortgage: amortization correct; P+I stops post-payoff; balance reaches zero.
+  - Itemized > standard reduces ordinary tax vs. paid-off scenario.
+  - Sale: primary + $200K gain + MFJ → $0 cap gains (under exclusion); rental + $200K gain → $200K LTCG.
+  - Sale: mortgage paid from proceeds; net deposited to destination (existing or synthetic Savings).
+  - Reverse mortgage: monthly non-taxable income flows; balance compounds; auto-stops at equity zero.
+  - Reverse mortgage rejected if primary mortgage active or property is non-PRIMARY.
+- `TaxCalculator` unit tests: itemized > standard uses itemized; SALT cap clips property tax at $40K.
+
+Frontend:
+- PropertyForm renders all fields; derived payoff updates live.
+- ProfileDetailPage round-trips property CRUD via mocked API.
+- ScenarioDetailPage shows property inclusion list and decisions sub-section.
+- SimulationResultsPage renders new columns and Net Worth card.
+
+#### Known simplifications (documented, not fixed)
+- **Value / insurance / HOA / maintenance growth** all use general inflation. Real housing and insurance trend faster in many markets. Per-property override is Phase 7.
+- **Property tax inflation** ignores caps (CA Prop 13, etc.).
+- **§121 exclusion ($250K/$500K)** inflated by `inflationFactor`. By statute it's frozen nominal since 1997; without inflation-adjustment, long-horizon sales of homes bought today show wildly inflated taxable gains. Deliberate tradeoff to keep projections realistic.
+- **§121 use-and-ownership test** (2-of-last-5 years) not validated — assumed satisfied.
+- **§1250 depreciation recapture on rental sales** not modeled — rental sales under-taxed by ~25% × accumulated depreciation.
+- **SALT cap held at $40K nominal.** Under OBBBA it inflates 2026–2029 then reverts to $10K in 2030. Schedule modeling deferred.
+- **$750K acquisition-indebtedness cap** on mortgage interest deduction not enforced.
+- **HELOC, PMI, refinancing, ARMs** not modeled.
+- **Reverse mortgage simplified**: no MIP (~0.5%/yr), no closing costs, no non-recourse cap (we just stop at equity zero), no LOC mode. Tenure payment only.
+- **State income tax** not modeled — we under-itemize for users in income-tax states (their state tax would also count against SALT, but we have nothing to add).
+
+#### Out of scope (intentional)
+- Multi-property optimization (which to sell first)
+- Property as collateral for non-HECM debt
+- Step-up in basis at death / inheritance / estate tax
+- 1031 exchanges
+
+**Deliverable:** Users enter properties on their profile, see housing as a first-class line in cashflow and net worth, optionally model sale events with proper §121 cap-gains treatment, optionally activate a simplified reverse mortgage, and see mortgage interest itemized into the tax pipeline. Sale and reverse-mortgage decisions are per-scenario, enabling side-by-side "keep vs. sell" or "reverse vs. not" comparisons.
+
 ### Remaining Phase 5 (not yet scheduled)
 - [ ] Side-by-side comparison view for 2–4 scenarios
 - [ ] Overlay charts: portfolio balance, success probability, lifetime tax burden
@@ -423,6 +567,7 @@ Not scheduled. Prioritized based on user feedback.
 | 4     | Enhanced Tax & Withdrawal Optimization   | ✅ done                | —                     |
 | 4.9   | UI consolidation & cloning               | ✅ done                | —                     |
 | 5.1   | RMDs                                     | ✅ done                | —                     |
+| 5.2   | Real Property                            | ✅ done (rev-mort deferred) | —                |
 | 5     | Comparison view, what-if mode, reporting | 🚧 in progress         | 1–2 weeks remaining   |
 | 6     | Production Readiness                     | ⏳ planned             | 2–3 weeks             |
 | 7+    | Future Enhancements                      | ♾  backlog             | ongoing               |

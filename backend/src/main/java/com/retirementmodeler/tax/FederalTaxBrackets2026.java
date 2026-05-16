@@ -24,6 +24,16 @@ public final class FederalTaxBrackets2026 {
 
   public static final int BASE_TAX_YEAR = 2026;
 
+  /**
+   * SALT (state-and-local-tax) itemized-deduction cap. Under OBBBA the cap is $40,000 for 2026
+   * (rising slightly through 2029 then reverting to $10,000 in 2030 — the future schedule isn't
+   * modeled here; cap is held constant in nominal dollars as a documented simplification). Used
+   * when computing itemized deductions: {@code salt = min(yearPropertyTax, SALT_CAP)}. State income
+   * tax isn't modeled separately, so users in income-tax states are slightly under-itemized (their
+   * state tax would also count against this cap).
+   */
+  public static final BigDecimal SALT_CAP = new BigDecimal("40000");
+
   private FederalTaxBrackets2026() {}
 
   public static final TaxBrackets BRACKETS =

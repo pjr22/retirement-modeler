@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithRouter, axiosOk } from "../test/helpers";
 
@@ -53,6 +53,7 @@ const sampleScenario = {
   name: "Test Scenario",
   description: null,
   accountIds: ["acc-1"],
+  propertyIds: [],
   assumptions: {
     expectedRateOfReturn: 0.07,
     inflationRate: 0.03,
@@ -87,6 +88,13 @@ const sampleSimulation = {
       yearOrdinaryTax: 0,
       yearCapitalGainsTax: 0,
       yearRmd: 0,
+      yearMortgageInterest: 0,
+      yearPropertyTaxPaid: 0,
+      yearHousingExpenses: 0,
+      yearSaleProceedsNet: 0,
+      yearSaleCapitalGains: 0,
+      yearPropertyValueTotal: 0,
+      yearDeduction: 16100,
       inflationFactor: 1,
     },
     {
@@ -104,6 +112,13 @@ const sampleSimulation = {
       yearOrdinaryTax: 0,
       yearCapitalGainsTax: 0,
       yearRmd: 0,
+      yearMortgageInterest: 0,
+      yearPropertyTaxPaid: 0,
+      yearHousingExpenses: 0,
+      yearSaleProceedsNet: 0,
+      yearSaleCapitalGains: 0,
+      yearPropertyValueTotal: 0,
+      yearDeduction: 37000,
       inflationFactor: 2.3,
     },
     {
@@ -121,6 +136,13 @@ const sampleSimulation = {
       yearOrdinaryTax: 200000,
       yearCapitalGainsTax: 64000,
       yearRmd: 42500,
+      yearMortgageInterest: 0,
+      yearPropertyTaxPaid: 0,
+      yearHousingExpenses: 0,
+      yearSaleProceedsNet: 0,
+      yearSaleCapitalGains: 0,
+      yearPropertyValueTotal: 0,
+      yearDeduction: 72000,
       inflationFactor: 4.5,
     },
   ],
@@ -238,8 +260,13 @@ describe("SimulationResultsPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Lifetime Tax")).toBeInTheDocument();
     });
-    // Lifetime tax for the deterministic series is 0 + 0 + 264000 = $264,000.
-    expect(screen.getByText("$264,000")).toBeInTheDocument();
+    // Lifetime tax for the deterministic series is 0 + 0 + 264000 = $264,000. The year-by-year
+    // table also has a Tax column with the same per-row value, so we scope to the stat-card's
+    // sibling Typography. The stat card label is "Lifetime Tax"; the next h4 is its value.
+    const lifetimeLabel = screen.getByText("Lifetime Tax");
+    const card = lifetimeLabel.closest(".MuiPaper-root");
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText("$264,000")).toBeInTheDocument();
   });
 
   it("shows the RMD column in the year-by-year table sourced from yearRmd", async () => {
@@ -264,7 +291,7 @@ describe("SimulationResultsPage", () => {
     expect(screen.getByText("$42,500")).toBeInTheDocument();
   });
 
-  it("shows separate Ordinary Tax and Capital Gains Tax columns in the year-by-year table", async () => {
+  it("shows a combined Tax column and an Expense Budget column in the year-by-year table", async () => {
     const user = userEvent.setup();
     vi.mocked(getSimulation).mockResolvedValue(axiosOk(sampleSimulation));
     vi.mocked(getScenario).mockResolvedValue(axiosOk(sampleScenario));
@@ -280,12 +307,19 @@ describe("SimulationResultsPage", () => {
     await user.click(screen.getByText("Show Table"));
 
     await waitFor(() => {
-      expect(screen.getByRole("columnheader", { name: /Ordinary Tax/ })).toBeInTheDocument();
-      expect(screen.getByRole("columnheader", { name: /Capital Gains Tax/ })).toBeInTheDocument();
+      expect(screen.getByRole("table")).toBeInTheDocument();
     });
-    // Row at age 90: ordinary tax $200,000, cap gains tax $64,000 (sourced directly).
-    expect(screen.getByText("$200,000")).toBeInTheDocument();
-    expect(screen.getByText("$64,000")).toBeInTheDocument();
+    // Old "Ordinary Tax" / "Capital Gains Tax" column headers are gone — replaced by a single
+    // "Tax" column. New columns: Net Change, Expense Budget.
+    const columnHeaders = screen.getAllByRole("columnheader").map((h) => h.textContent?.trim());
+    expect(columnHeaders).toContain("Net Change");
+    expect(columnHeaders).toContain("Expense Budget");
+    expect(columnHeaders).toContain("Tax");
+    expect(columnHeaders).not.toContain("Ordinary Tax");
+    expect(columnHeaders).not.toContain("Capital Gains Tax");
+    expect(columnHeaders).not.toContain("Contributions");
+    expect(columnHeaders).not.toContain("Withdrawals");
+    expect(columnHeaders).not.toContain("Mortgage Interest");
   });
 
   it("shows Filing Status and Withdrawal Ordering rows in the assumptions table", async () => {

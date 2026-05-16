@@ -3,12 +3,14 @@ package com.retirementmodeler.service;
 import com.retirementmodeler.exceptions.ResourceNotFoundException;
 import com.retirementmodeler.model.Account;
 import com.retirementmodeler.model.IncomeSource;
+import com.retirementmodeler.model.Property;
 import com.retirementmodeler.model.Scenario;
 import com.retirementmodeler.model.SimulationAssumptions;
 import com.retirementmodeler.model.User;
 import com.retirementmodeler.model.UserProfile;
 import com.retirementmodeler.repository.AccountRepository;
 import com.retirementmodeler.repository.IncomeSourceRepository;
+import com.retirementmodeler.repository.PropertyRepository;
 import com.retirementmodeler.repository.ScenarioRepository;
 import com.retirementmodeler.repository.UserProfileRepository;
 import com.retirementmodeler.repository.UserRepository;
@@ -29,18 +31,21 @@ public class UserProfileService {
   private final AccountRepository accountRepository;
   private final ScenarioRepository scenarioRepository;
   private final IncomeSourceRepository incomeSourceRepository;
+  private final PropertyRepository propertyRepository;
 
   public UserProfileService(
       UserProfileRepository repository,
       UserRepository userRepository,
       AccountRepository accountRepository,
       ScenarioRepository scenarioRepository,
-      IncomeSourceRepository incomeSourceRepository) {
+      IncomeSourceRepository incomeSourceRepository,
+      PropertyRepository propertyRepository) {
     this.repository = repository;
     this.userRepository = userRepository;
     this.accountRepository = accountRepository;
     this.scenarioRepository = scenarioRepository;
     this.incomeSourceRepository = incomeSourceRepository;
+    this.propertyRepository = propertyRepository;
   }
 
   public UserProfile create(UUID ownerId, UserProfile profile) {
@@ -137,6 +142,30 @@ public class UserProfileService {
       accountIdMap.put(src.getId(), saved.getId());
     }
 
+    Map<UUID, UUID> propertyIdMap = new HashMap<>();
+    for (Property src : propertyRepository.findByUserProfileId(source.getId())) {
+      Property copy = new Property();
+      copy.setUserProfileId(newProfile.getId());
+      copy.setName(src.getName());
+      copy.setType(src.getType());
+      copy.setCurrentValue(src.getCurrentValue());
+      copy.setCostBasis(src.getCostBasis());
+      copy.setMortgageBalance(src.getMortgageBalance());
+      copy.setMortgageAnnualRate(src.getMortgageAnnualRate());
+      copy.setMortgageMonthlyPi(src.getMortgageMonthlyPi());
+      copy.setMortgageStartDate(src.getMortgageStartDate());
+      copy.setMortgageTermYears(src.getMortgageTermYears());
+      copy.setPlannedSaleDate(src.getPlannedSaleDate());
+      copy.setPostSaleMonthlyHousingCost(src.getPostSaleMonthlyHousingCost());
+      copy.setAnnualPropertyTax(src.getAnnualPropertyTax());
+      copy.setAnnualInsurance(src.getAnnualInsurance());
+      copy.setMonthlyHoa(src.getMonthlyHoa());
+      copy.setAnnualMaintenancePct(src.getAnnualMaintenancePct());
+      copy.setSellingCostPct(src.getSellingCostPct());
+      Property saved = propertyRepository.save(copy);
+      propertyIdMap.put(src.getId(), saved.getId());
+    }
+
     for (Scenario src : scenarioRepository.findByUserProfileId(source.getId())) {
       Scenario copy = new Scenario();
       copy.setUserProfileId(newProfile.getId());
@@ -148,6 +177,12 @@ public class UserProfileService {
               .filter(Objects::nonNull)
               .collect(Collectors.toList());
       copy.setAccountIds(remappedAccountIds);
+      List<UUID> remappedPropertyIds =
+          src.getPropertyIds().stream()
+              .map(propertyIdMap::get)
+              .filter(Objects::nonNull)
+              .collect(Collectors.toList());
+      copy.setPropertyIds(remappedPropertyIds);
       copy.setAssumptions(deepCopyAssumptions(src.getAssumptions()));
       Scenario savedScenario = scenarioRepository.save(copy);
 

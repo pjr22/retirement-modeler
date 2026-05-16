@@ -5,6 +5,7 @@ import com.retirementmodeler.model.FilingStatus;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.MonteCarloSummary;
 import com.retirementmodeler.model.PercentilePoint;
+import com.retirementmodeler.model.Property;
 import com.retirementmodeler.model.SimulationAssumptions;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -33,6 +34,28 @@ public class MonteCarloEngine {
       LocalDate plannedRetirementDate,
       int lifeExpectancy,
       int numTrials) {
+    return run(
+        accounts,
+        incomeSources,
+        List.of(),
+        assumptions,
+        filingStatus,
+        dateOfBirth,
+        plannedRetirementDate,
+        lifeExpectancy,
+        numTrials);
+  }
+
+  public MonteCarloSummary run(
+      List<Account> accounts,
+      List<IncomeSource> incomeSources,
+      List<Property> properties,
+      SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
+      LocalDate dateOfBirth,
+      LocalDate plannedRetirementDate,
+      int lifeExpectancy,
+      int numTrials) {
 
     // Convert annual return params to monthly: mean/12, stddev/sqrt(12).
     // The variance scales linearly with horizon under the standard random-walk
@@ -48,6 +71,7 @@ public class MonteCarloEngine {
           simulationEngine.projectSingleTrial(
               accounts,
               incomeSources,
+              properties,
               assumptions,
               filingStatus,
               dateOfBirth,
@@ -73,10 +97,11 @@ public class MonteCarloEngine {
     int projectionLength = allTrials.isEmpty() ? 0 : allTrials.get(0).size();
     List<PercentilePoint> percentileBalances = new ArrayList<>();
 
-    // Age at the first emitted row (the first retirement-anchor month >= today),
-    // measured at end-of-month so it matches SimulationEngine's deterministic rows.
+    // Age at the first emitted row. Rows are anchored to December (calendar-year aggregates),
+    // so the first row is Dec of this calendar year (or sim-start year). Age computed at Dec 31
+    // so it matches the SimulationEngine's end-of-month age computation.
     LocalDate today = LocalDate.now().withDayOfMonth(1);
-    LocalDate firstRow = today.withMonth(plannedRetirementDate.getMonthValue());
+    LocalDate firstRow = today.withMonth(12);
     if (firstRow.isBefore(today)) {
       firstRow = firstRow.plusYears(1);
     }

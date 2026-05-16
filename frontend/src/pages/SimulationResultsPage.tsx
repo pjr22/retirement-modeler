@@ -42,7 +42,6 @@ import type {
   YearlyProjection,
   WithdrawalOrderingStrategy,
 } from "../types";
-import { formatMonthYear } from "../utils";
 
 type SeriesKey = "Deterministic" | "Median" | "p10" | "p25" | "p75" | "p90";
 
@@ -220,6 +219,7 @@ export default function SimulationResultsPage() {
     contributions: number;
     income: number;
     withdrawals: number;
+    expenseBudget: number;
     ordinaryTax: number;
     capitalGainsTax: number;
     totalTax: number;
@@ -247,19 +247,43 @@ export default function SimulationResultsPage() {
       } else if (row.yearWithdrawals === 0) {
         withdrawals = 0;
       } else {
-        let requested: number;
+        // Mirror the engine's two-part account drain so the Withdrawals column shows the
+        // user's total account draw, not just the strategy portion. Housing drain depends on
+        // income (which doesn't vary per Monte Carlo trial) and the deterministic-row's housing
+        // expense (also constant across trials). The strategy draw depends on the series'
+        // balance for PORTFOLIO_PERCENTAGE.
+        const housing = row.yearHousingExpenses ?? 0;
+        let strategyDraw: number;
+        let housingDrain: number;
         if (scenario?.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE") {
-          requested = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
+          strategyDraw = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
+          // Portfolio-percentage: income is supplemental; all of it offsets housing.
+          housingDrain = Math.max(0, housing - income);
         } else {
+          // Cashflow-target: income covers target first, surplus offsets housing.
           const monthlyTarget = scenario?.assumptions.withdrawalMonthlyAmount ?? 0;
           const annualTarget = monthlyTarget * 12 * row.inflationFactor;
-          requested = Math.max(0, annualTarget - income);
+          strategyDraw = Math.max(0, annualTarget - income);
+          const incomeSurplus = Math.max(0, income - annualTarget);
+          housingDrain = Math.max(0, housing - incomeSurplus);
         }
+        const requested = strategyDraw + housingDrain;
         const availableSavings = Math.max(0, previousSeriesValue + contributions);
         withdrawals = Math.min(requested, availableSavings);
       }
 
       const taxes = computeRowTax(row, isDeterministic, income + withdrawals);
+
+      // Expense Budget — what the strategy says the user has available to spend (non-housing
+      // for CASHFLOW_TARGET, total annual draw for PORTFOLIO_PERCENTAGE). Used for display
+      // only; the actual cashflow accounting happens via withdrawals + income.
+      let expenseBudget: number;
+      if (scenario?.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE") {
+        expenseBudget = seriesValue * (scenario.assumptions.withdrawalPercentage ?? 0);
+      } else {
+        const monthlyTarget = scenario?.assumptions.withdrawalMonthlyAmount ?? 0;
+        expenseBudget = monthlyTarget * 12 * row.inflationFactor;
+      }
 
       return {
         row,
@@ -267,6 +291,7 @@ export default function SimulationResultsPage() {
         contributions,
         income,
         withdrawals,
+        expenseBudget,
         ordinaryTax: taxes.ordinaryTax,
         capitalGainsTax: taxes.capitalGainsTax,
         totalTax: taxes.totalTax,
@@ -278,6 +303,15 @@ export default function SimulationResultsPage() {
     () => rowAggregates.reduce((sum, agg) => sum + agg.totalTax, 0),
     [rowAggregates],
   );
+
+  // Property value at the row matching the metrics' final age. We pull from the deterministic
+  // projection because property growth is deterministic (general inflation rate) — Monte Carlo
+  // variability lives in account returns, not in housing values.
+  const finalPropertyValue = useMemo(() => {
+    if (!result || result.deterministicProjection.length === 0) return 0;
+    const last = result.deterministicProjection[result.deterministicProjection.length - 1];
+    return last.yearPropertyValueTotal ?? 0;
+  }, [result]);
 
   // Tax-breakdown chart data: year-by-year ordinary + capital-gains tax for the selected series.
   const taxChartData = useMemo(
@@ -437,6 +471,26 @@ export default function SimulationResultsPage() {
               </Paper>
             </MuiTooltip>
           </Grid>
+          {finalPropertyValue > 0 && (
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <MuiTooltip
+                title={`Final-year net worth = account balance + property value. Property value grows with general inflation in the projection.`}
+                arrow
+              >
+                <Paper sx={{ p: 2, textAlign: "center", cursor: "help" }}>
+                  <Typography variant="overline" color="text.secondary">
+                    Final Net Worth (age {metrics.finalAge})
+                  </Typography>
+                  <Typography
+                    variant="h4"
+                    color={metrics.finalBalance + finalPropertyValue > 0 ? "text.primary" : "error.main"}
+                  >
+                    {formatCurrency(metrics.finalBalance + finalPropertyValue)}
+                  </Typography>
+                </Paper>
+              </MuiTooltip>
+            </Grid>
+          )}
         </Grid>
       )}
 
@@ -500,38 +554,119 @@ export default function SimulationResultsPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Date</TableCell>
+                <TableCell>Year</TableCell>
                 <TableCell>Age</TableCell>
-                <TableCell align="right">Balance</TableCell>
-                <TableCell align="right">Contributions</TableCell>
-                <TableCell align="right">Withdrawals</TableCell>
+                <TableCell align="right">Assets</TableCell>
                 <TableCell align="right">
                   <MuiTooltip
-                    title="Required Minimum Distribution — the portion of Traditional-account withdrawals forced by the SECURE 2.0 rule starting at age 73 (or 75 for those born 1960+). RMD amounts are included in the Withdrawals column total."
+                    title="Net change to account assets this year: contributions (positive) minus total withdrawals (negative). Total withdrawals includes strategy-driven discretionary draws + the portion of housing not covered by income."
+                    arrow
+                  >
+                    <span>Net Change</span>
+                  </MuiTooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="Required Minimum Distribution — the portion of Traditional-account withdrawals forced by the SECURE 2.0 rule starting at age 73 (or 75 for those born 1960+). RMD amounts are included in the Net Change column total."
                     arrow
                   >
                     <span>RMD</span>
                   </MuiTooltip>
                 </TableCell>
                 <TableCell align="right">Income</TableCell>
-                <TableCell align="right">Ordinary Tax</TableCell>
-                <TableCell align="right">Capital Gains Tax</TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="What the withdrawal strategy says you have available to spend this year. CASHFLOW_TARGET: monthly target × 12, inflated to this year's dollars (excludes housing). PORTFOLIO_PERCENTAGE: the strategy's % of current balance for this year."
+                    arrow
+                  >
+                    <span>Expense Budget</span>
+                  </MuiTooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="Total federal tax (ordinary income tax + long-term capital gains tax). See the Tax Breakdown chart for the ordinary/cap-gains split."
+                    arrow
+                  >
+                    <span>Tax</span>
+                  </MuiTooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="Sum of monthly mortgage P+I + property tax + insurance + HOA + maintenance for all properties in this scenario, accumulated over the 12-month window."
+                    arrow
+                  >
+                    <span>Housing Expense</span>
+                  </MuiTooltip>
+                </TableCell>
+                <TableCell align="right">
+                  <MuiTooltip
+                    title="Sum of property values across not-yet-sold properties at this row's date (in projection-year dollars). Adds to your net worth alongside the Assets column. Sale events show up as a sudden drop in this column and a corresponding rise in Assets."
+                    arrow
+                  >
+                    <span>Property Value</span>
+                  </MuiTooltip>
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {rowAggregates.map((agg) => (
-                <TableRow key={agg.row.date}>
-                  <TableCell>{formatMonthYear(agg.row.date)}</TableCell>
-                  <TableCell>{agg.row.age}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.seriesValue)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.contributions)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.withdrawals)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.row.yearRmd ?? 0)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.income)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.ordinaryTax)}</TableCell>
-                  <TableCell align="right">{formatCurrency(agg.capitalGainsTax)}</TableCell>
-                </TableRow>
-              ))}
+              {rowAggregates.map((agg) => {
+                // Pre-retirement rows: blank out fields that don't apply yet (RMD, Income,
+                // Expense Budget, Tax, Housing Expense). The user is still earning wages
+                // (not modeled) so housing costs and discretionary spending aren't drawn
+                // from accounts; showing $0 for those would be misleading.
+                const rowYear = parseInt(agg.row.date.slice(0, 4), 10);
+                const retirementYear = profile
+                  ? parseInt(profile.plannedRetirementDate.slice(0, 4), 10)
+                  : 0;
+                const isPreRetirement = rowYear < retirementYear;
+                const naCell = (
+                  <TableCell align="right" sx={{ color: "text.disabled" }}>
+                    —
+                  </TableCell>
+                );
+                // Net Change rolls contributions in (positive), withdrawals out (negative),
+                // and sale proceeds in (positive — net proceeds get deposited to Savings).
+                const netChange =
+                  agg.contributions - agg.withdrawals + (agg.row.yearSaleProceedsNet ?? 0);
+                return (
+                  <TableRow key={agg.row.date}>
+                    <TableCell>{agg.row.date.slice(0, 4)}</TableCell>
+                    <TableCell>{agg.row.age}</TableCell>
+                    <TableCell align="right">{formatCurrency(agg.seriesValue)}</TableCell>
+                    <TableCell align="right">{formatCurrency(netChange)}</TableCell>
+                    {isPreRetirement ? (
+                      naCell
+                    ) : (
+                      <TableCell align="right">{formatCurrency(agg.row.yearRmd ?? 0)}</TableCell>
+                    )}
+                    {isPreRetirement ? (
+                      naCell
+                    ) : (
+                      <TableCell align="right">{formatCurrency(agg.income)}</TableCell>
+                    )}
+                    {isPreRetirement ? (
+                      naCell
+                    ) : (
+                      <TableCell align="right">{formatCurrency(agg.expenseBudget)}</TableCell>
+                    )}
+                    {isPreRetirement ? (
+                      naCell
+                    ) : (
+                      <TableCell align="right">{formatCurrency(agg.totalTax)}</TableCell>
+                    )}
+                    {isPreRetirement ? (
+                      naCell
+                    ) : (
+                      <TableCell align="right">
+                        {formatCurrency(agg.row.yearHousingExpenses ?? 0)}
+                      </TableCell>
+                    )}
+                    <TableCell align="right">
+                      {formatCurrency(agg.row.yearPropertyValueTotal ?? 0)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           {selectedKey !== "Deterministic" && scenario && (
@@ -547,8 +682,8 @@ export default function SimulationResultsPage() {
               Carlo trials.
               <br />
               {scenario.assumptions.withdrawalStrategy === "PORTFOLIO_PERCENTAGE"
-                ? "Withdrawals on this series are derived as (percentage × that series' balance), capped at savings available that year (previous balance + contributions). Income is paid on top — not netted from withdrawals."
-                : "Withdrawals on this series cover the gap between the configured monthly cashflow target × inflation and incoming income that month, capped at savings available (previous balance + contributions). If income meets the target, savings withdrawal is zero."}
+                ? "Withdrawals on this series are derived as (percentage × that series' balance) plus the housing portion not covered by income, capped at savings available that year (previous balance + contributions). Income offsets housing first."
+                : "Withdrawals on this series cover (a) the gap between the configured monthly cashflow target × inflation and incoming income, and (b) the housing cost not covered by income surplus over the target. Capped at savings available (previous balance + contributions)."}
               <br />
               Tax columns scale the deterministic row's bracket-based total by the series'
               (income + withdrawals), then split using the deterministic row's ordinary /

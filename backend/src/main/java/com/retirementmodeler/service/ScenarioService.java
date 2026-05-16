@@ -26,6 +26,9 @@ public class ScenarioService {
     if (scenario.getAccountIds() == null) {
       scenario.setAccountIds(List.of());
     }
+    if (scenario.getPropertyIds() == null) {
+      scenario.setPropertyIds(List.of());
+    }
     return repository.save(scenario);
   }
 
@@ -46,6 +49,8 @@ public class ScenarioService {
     existing.setName(scenario.getName());
     existing.setDescription(scenario.getDescription());
     existing.setAccountIds(scenario.getAccountIds() != null ? scenario.getAccountIds() : List.of());
+    existing.setPropertyIds(
+        scenario.getPropertyIds() != null ? scenario.getPropertyIds() : List.of());
     existing.setAssumptions(scenario.getAssumptions());
     return repository.save(existing);
   }

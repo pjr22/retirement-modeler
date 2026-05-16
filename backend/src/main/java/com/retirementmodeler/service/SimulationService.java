@@ -4,6 +4,7 @@ import com.retirementmodeler.exceptions.ResourceNotFoundException;
 import com.retirementmodeler.model.Account;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.MonteCarloSummary;
+import com.retirementmodeler.model.Property;
 import com.retirementmodeler.model.Scenario;
 import com.retirementmodeler.model.SimulationAssumptions;
 import com.retirementmodeler.model.SimulationResult;
@@ -25,6 +26,7 @@ public class SimulationService {
   private final MonteCarloEngine monteCarloEngine;
   private final ScenarioService scenarioService;
   private final AccountService accountService;
+  private final PropertyService propertyService;
   private final IncomeSourceService incomeSourceService;
   private final UserProfileService userProfileService;
   private final SimulationRepository repository;
@@ -34,6 +36,7 @@ public class SimulationService {
       MonteCarloEngine monteCarloEngine,
       ScenarioService scenarioService,
       AccountService accountService,
+      PropertyService propertyService,
       IncomeSourceService incomeSourceService,
       UserProfileService userProfileService,
       SimulationRepository repository) {
@@ -41,6 +44,7 @@ public class SimulationService {
     this.monteCarloEngine = monteCarloEngine;
     this.scenarioService = scenarioService;
     this.accountService = accountService;
+    this.propertyService = propertyService;
     this.incomeSourceService = incomeSourceService;
     this.userProfileService = userProfileService;
     this.repository = repository;
@@ -57,6 +61,13 @@ public class SimulationService {
             .filter(a -> scenario.getAccountIds().contains(a.getId()))
             .collect(Collectors.toList());
 
+    List<Property> allProperties =
+        propertyService.getByProfileId(scenario.getUserProfileId(), ownerId);
+    List<Property> selectedProperties =
+        allProperties.stream()
+            .filter(p -> scenario.getPropertyIds().contains(p.getId()))
+            .collect(Collectors.toList());
+
     List<IncomeSource> selectedIncomeSources =
         incomeSourceService.getByScenarioId(scenarioId, ownerId);
 
@@ -66,6 +77,7 @@ public class SimulationService {
         simulationEngine.projectDeterministic(
             selectedAccounts,
             selectedIncomeSources,
+            selectedProperties,
             assumptions,
             profile.getFilingStatus(),
             profile.getDateOfBirth(),
@@ -80,6 +92,7 @@ public class SimulationService {
         monteCarloEngine.run(
             selectedAccounts,
             selectedIncomeSources,
+            selectedProperties,
             assumptions,
             profile.getFilingStatus(),
             profile.getDateOfBirth(),

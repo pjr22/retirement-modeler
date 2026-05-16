@@ -26,6 +26,7 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
   private CustomUserDetails otherUserDetails;
   private String ownersProfileId;
   private String ownersAccountId;
+  private String ownersPropertyId;
   private String ownersIncomeSourceId;
   private String ownersScenarioId;
   private String ownersSimulationId;
@@ -74,6 +75,32 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
             .andReturn();
     ownersAccountId =
         objectMapper.readTree(accountResult.getResponse().getContentAsString()).get("id").asText();
+
+    MvcResult propertyResult =
+        mockMvc
+            .perform(
+                post("/api/users/{profileId}/properties", ownersProfileId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(
+                        """
+                        {
+                          "name": "Owner House",
+                          "type": "PRIMARY_RESIDENCE",
+                          "currentValue": 500000,
+                          "costBasis": 300000,
+                          "mortgageBalance": 100000,
+                          "mortgageAnnualRate": 0.06,
+                          "mortgageMonthlyPi": 1200,
+                          "annualPropertyTax": 5000,
+                          "annualInsurance": 1000,
+                          "monthlyHoa": 0,
+                          "annualMaintenancePct": 0.01
+                        }
+                        """))
+            .andExpect(status().isCreated())
+            .andReturn();
+    ownersPropertyId =
+        objectMapper.readTree(propertyResult.getResponse().getContentAsString()).get("id").asText();
 
     MvcResult scenarioResult =
         mockMvc
@@ -293,6 +320,54 @@ class AuthorizationIsolationTest extends BaseIntegrationTest {
   void otherUserCannotCloneOwnersProfile() throws Exception {
     mockMvc
         .perform(post("/api/users/{id}/clone", ownersProfileId).with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotListOwnersProperties() throws Exception {
+    mockMvc
+        .perform(
+            get("/api/users/{profileId}/properties", ownersProfileId).with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotUpdateOwnersProperty() throws Exception {
+    mockMvc
+        .perform(
+            put("/api/properties/{id}", ownersPropertyId)
+                .with(user(otherUserDetails))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {
+                      "name": "Hijacked",
+                      "type": "LAND",
+                      "currentValue": 1,
+                      "costBasis": 1,
+                      "mortgageBalance": 0,
+                      "mortgageAnnualRate": 0,
+                      "mortgageMonthlyPi": 0,
+                      "annualPropertyTax": 0,
+                      "annualInsurance": 0,
+                      "monthlyHoa": 0,
+                      "annualMaintenancePct": 0
+                    }
+                    """))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotDeleteOwnersProperty() throws Exception {
+    mockMvc
+        .perform(delete("/api/properties/{id}", ownersPropertyId).with(user(otherUserDetails)))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void otherUserCannotCloneOwnersProperty() throws Exception {
+    mockMvc
+        .perform(post("/api/properties/{id}/clone", ownersPropertyId).with(user(otherUserDetails)))
         .andExpect(status().isNotFound());
   }
 }

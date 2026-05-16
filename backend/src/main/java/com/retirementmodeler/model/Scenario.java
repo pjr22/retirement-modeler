@@ -32,6 +32,11 @@ public class Scenario {
   @Column(name = "account_id")
   private List<UUID> accountIds = new ArrayList<>();
 
+  @ElementCollection(fetch = FetchType.EAGER)
+  @CollectionTable(name = "scenario_properties", joinColumns = @JoinColumn(name = "scenario_id"))
+  @Column(name = "property_id")
+  private List<UUID> propertyIds = new ArrayList<>();
+
   @Embedded private SimulationAssumptions assumptions;
 
   public Scenario() {}
@@ -74,6 +79,14 @@ public class Scenario {
 
   public void setAccountIds(List<UUID> accountIds) {
     this.accountIds = accountIds;
+  }
+
+  public List<UUID> getPropertyIds() {
+    return propertyIds;
+  }
+
+  public void setPropertyIds(List<UUID> propertyIds) {
+    this.propertyIds = propertyIds;
   }
 
   public SimulationAssumptions getAssumptions() {

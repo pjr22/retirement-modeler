@@ -5,14 +5,19 @@ import com.retirementmodeler.model.AccountType;
 import com.retirementmodeler.model.FilingStatus;
 import com.retirementmodeler.model.IncomeSource;
 import com.retirementmodeler.model.IncomeType;
+import com.retirementmodeler.model.Property;
+import com.retirementmodeler.model.PropertyType;
 import com.retirementmodeler.model.SimulationAssumptions;
 import com.retirementmodeler.model.WithdrawalOrderingStrategy;
+import com.retirementmodeler.model.WithdrawalStrategy;
 import com.retirementmodeler.model.YearlyProjection;
+import com.retirementmodeler.simulation.mortgage.MortgageAmortizer;
 import com.retirementmodeler.simulation.withdrawal.AccountSnapshot;
 import com.retirementmodeler.simulation.withdrawal.CustomAllocator;
 import com.retirementmodeler.simulation.withdrawal.ProportionalAllocator;
 import com.retirementmodeler.simulation.withdrawal.TaxOptimizedAllocator;
 import com.retirementmodeler.simulation.withdrawal.WithdrawalAllocator;
+import com.retirementmodeler.tax.FederalTaxBrackets2026;
 import com.retirementmodeler.tax.RmdCalculator;
 import com.retirementmodeler.tax.SocialSecurityTaxer;
 import com.retirementmodeler.tax.TaxBracketProvider;
@@ -109,6 +114,16 @@ public class SimulationEngine {
   // we proxy that by multiplying by the simulation's cumulative inflation factor each year.
   private static final BigDecimal UNDER_FRA_EARNINGS_THRESHOLD = BigDecimal.valueOf(23_400);
   private static final BigDecimal YEAR_OF_FRA_EARNINGS_THRESHOLD = BigDecimal.valueOf(62_160);
+
+  // §121 home-sale capital-gains exclusion. Statutory: $250K single / $500K MFJ, frozen nominal
+  // since 1997. We inflate-adjust to keep long-horizon projections sensible (without it, a 2055
+  // primary-residence sale would show wildly inflated taxable gains). Documented simplification.
+  private static final BigDecimal SECTION_121_EXCLUSION_SINGLE = new BigDecimal("250000");
+  private static final BigDecimal SECTION_121_EXCLUSION_MFJ = new BigDecimal("500000");
+
+  // Default selling cost (realtor + closing) if a property doesn't specify one. 6% covers a
+  // typical full-service-realtor + closing-cost scenario.
+  private static final BigDecimal DEFAULT_SELLING_COST_PCT = new BigDecimal("0.06");
   private static final BigDecimal UNDER_FRA_REDUCTION_RATIO = BigDecimal.valueOf(0.5);
   private static final BigDecimal YEAR_OF_FRA_REDUCTION_RATIO =
       BigDecimal.ONE.divide(BigDecimal.valueOf(3), MC);
@@ -154,9 +169,30 @@ public class SimulationEngine {
       LocalDate dateOfBirth,
       LocalDate plannedRetirementDate,
       int lifeExpectancy) {
+    return projectDeterministic(
+        accounts,
+        incomeSources,
+        List.of(),
+        assumptions,
+        filingStatus,
+        dateOfBirth,
+        plannedRetirementDate,
+        lifeExpectancy);
+  }
+
+  public List<YearlyProjection> projectDeterministic(
+      List<Account> accounts,
+      List<IncomeSource> incomeSources,
+      List<Property> properties,
+      SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
+      LocalDate dateOfBirth,
+      LocalDate plannedRetirementDate,
+      int lifeExpectancy) {
     return project(
         accounts,
         incomeSources,
+        properties,
         assumptions,
         filingStatus,
         dateOfBirth,
@@ -179,9 +215,32 @@ public class SimulationEngine {
       LocalDate plannedRetirementDate,
       int lifeExpectancy,
       DoubleSupplier monthlyReturnSampler) {
+    return projectSingleTrial(
+        accounts,
+        incomeSources,
+        List.of(),
+        assumptions,
+        filingStatus,
+        dateOfBirth,
+        plannedRetirementDate,
+        lifeExpectancy,
+        monthlyReturnSampler);
+  }
+
+  public List<BigDecimal> projectSingleTrial(
+      List<Account> accounts,
+      List<IncomeSource> incomeSources,
+      List<Property> properties,
+      SimulationAssumptions assumptions,
+      FilingStatus filingStatus,
+      LocalDate dateOfBirth,
+      LocalDate plannedRetirementDate,
+      int lifeExpectancy,
+      DoubleSupplier monthlyReturnSampler) {
     return project(
             accounts,
             incomeSources,
+            properties,
             assumptions,
             filingStatus,
             dateOfBirth,
@@ -196,6 +255,7 @@ public class SimulationEngine {
   private List<YearlyProjection> project(
       List<Account> accounts,
       List<IncomeSource> incomeSources,
+      List<Property> properties,
       SimulationAssumptions assumptions,
       FilingStatus filingStatus,
       LocalDate dateOfBirth,
@@ -204,12 +264,17 @@ public class SimulationEngine {
       DoubleSupplier monthlyReturnSampler) {
 
     List<IncomeSource> sources = incomeSources != null ? incomeSources : List.of();
+    List<Property> props = properties != null ? properties : List.of();
     FilingStatus status = filingStatus != null ? filingStatus : FilingStatus.SINGLE;
 
     LocalDate today = LocalDate.now().withDayOfMonth(1);
     LocalDate deathDate = dateOfBirth.plusYears(lifeExpectancy);
     LocalDate retirementStart = transitionStart(plannedRetirementDate);
-    Month rowAnchorMonth = plannedRetirementDate.getMonth();
+    // Rows are anchored to December and represent calendar-year aggregates (Jan-Dec). The first
+    // row may be partial if the simulation starts mid-year (sim-start → Dec covers fewer than
+    // 12 months); the death year is dropped entirely if death falls before December (the prior
+    // year's Dec row is the last emit). Both are accepted edges.
+    Month rowAnchorMonth = Month.DECEMBER;
 
     LocalDate fraMonth = computeFraMonth(dateOfBirth);
 
@@ -247,6 +312,22 @@ public class SimulationEngine {
     BigDecimal rmdRemainingThisYear = scaled(BigDecimal.ZERO);
     BigDecimal yearRmdTotal = scaled(BigDecimal.ZERO);
 
+    // Property state (Phase 5.2). Parallel arrays keyed by index into `props`:
+    //   propertyMortgageBalances — running mortgage principal, amortized monthly. Initialized
+    //     from Property.mortgageBalance.
+    //   propertySold — true once the sale event has fired for the property; thereafter, no
+    //     property expenses are added except the replacement housing cost, and the value drops
+    //     to zero for yearPropertyValueTotal.
+    // Value / property-tax / insurance / HOA / maintenance growth is computed on-the-fly by
+    // multiplying the entity's "today's-dollars" amount by the current inflationFactor; no
+    // explicit per-year mutation needed.
+    List<BigDecimal> propertyMortgageBalances = new ArrayList<>(props.size());
+    boolean[] propertySold = new boolean[props.size()];
+    for (Property prop : props) {
+      propertyMortgageBalances.add(
+          scaled(prop.getMortgageBalance() != null ? prop.getMortgageBalance() : BigDecimal.ZERO));
+    }
+
     BigDecimal inflationFactor = scaled(BigDecimal.ONE);
 
     // Per-year aggregates. yearIncomeNonSS / yearSocialSecurityGross feed both the existing
@@ -257,6 +338,12 @@ public class SimulationEngine {
     BigDecimal yearSocialSecurityGross = scaled(BigDecimal.ZERO);
     BigDecimal yearOrdinaryFromWithdrawals = scaled(BigDecimal.ZERO);
     BigDecimal yearCapitalGainsFromWithdrawals = scaled(BigDecimal.ZERO);
+    // Property year aggregates.
+    BigDecimal yearMortgageInterest = scaled(BigDecimal.ZERO);
+    BigDecimal yearPropertyTaxPaid = scaled(BigDecimal.ZERO);
+    BigDecimal yearHousingExpenses = scaled(BigDecimal.ZERO);
+    BigDecimal yearSaleProceedsNet = scaled(BigDecimal.ZERO);
+    BigDecimal yearSaleCapitalGains = scaled(BigDecimal.ZERO);
 
     // SS earnings-test state. ssWithholdRemaining is reset at each calendar-year start to the
     // year's projected reduction; cumulativeWithheldPreFRA accumulates across years and is
@@ -419,6 +506,211 @@ public class SimulationEngine {
         }
       }
 
+      // 4.5 Property processing (Phase 5.2). Per active property:
+      //   a) If the planned sale date triggers this month (and not already sold), execute sale —
+      //      pay off mortgage, deposit net proceeds to Savings, record taxable cap gains.
+      //   b) If sold, the replacement housing cost (today's dollars × inflationFactor) is the
+      //      property's only ongoing expense for the rest of the simulation.
+      //   c) If not sold, amortize one month of mortgage and accumulate property tax, insurance,
+      //      HOA, and maintenance into this month's housing expense.
+      // Housing expenses are mandatory outflows funded after the strategy-driven withdrawal in
+      // step 4. They drain accounts via the same allocator, are bucketed by tax type just like
+      // withdrawals, and Traditional-account draws count toward the year's RMD.
+      BigDecimal monthHousingExpenses = BigDecimal.ZERO;
+      BigDecimal monthMortgageInterest = BigDecimal.ZERO;
+      BigDecimal monthPropertyTaxPaid = BigDecimal.ZERO;
+      BigDecimal monthSaleProceedsNet = BigDecimal.ZERO;
+      BigDecimal monthSaleCapitalGainsAmt = BigDecimal.ZERO;
+      for (int p = 0; p < props.size(); p++) {
+        Property prop = props.get(p);
+
+        // 4.5(a) Sale event — fires on the first month >= transitionStart(saleDate).
+        if (!propertySold[p] && prop.getPlannedSaleDate() != null) {
+          LocalDate saleStart = transitionStart(prop.getPlannedSaleDate());
+          if (!currentMonth.isBefore(saleStart)) {
+            BigDecimal grossValue =
+                (prop.getCurrentValue() != null ? prop.getCurrentValue() : BigDecimal.ZERO)
+                    .multiply(inflationFactor, MC);
+            BigDecimal sellingCostPct =
+                prop.getSellingCostPct() != null
+                    ? prop.getSellingCostPct()
+                    : DEFAULT_SELLING_COST_PCT;
+            BigDecimal grossProceeds =
+                grossValue.multiply(BigDecimal.ONE.subtract(sellingCostPct, MC), MC);
+            BigDecimal mortgagePayoff = propertyMortgageBalances.get(p);
+            BigDecimal netProceeds =
+                grossProceeds.subtract(mortgagePayoff, MC).max(BigDecimal.ZERO);
+            BigDecimal costBasis =
+                prop.getCostBasis() != null ? prop.getCostBasis() : BigDecimal.ZERO;
+            BigDecimal gain = grossProceeds.subtract(costBasis, MC).max(BigDecimal.ZERO);
+            BigDecimal taxableGain = gain;
+            if (prop.getType() == PropertyType.PRIMARY_RESIDENCE) {
+              BigDecimal exclusion =
+                  (status == FilingStatus.MARRIED_FILING_JOINTLY
+                          ? SECTION_121_EXCLUSION_MFJ
+                          : SECTION_121_EXCLUSION_SINGLE)
+                      .multiply(inflationFactor, MC);
+              taxableGain = gain.subtract(exclusion, MC).max(BigDecimal.ZERO);
+            }
+            // Deposit net proceeds into the first SAVINGS account (creating a synthetic one if
+            // none exists — same pattern as the RMD overflow path).
+            int savingsIdx = findSavingsIndex(activeAccounts);
+            if (savingsIdx < 0) {
+              Account synthetic = new Account();
+              synthetic.setId(UUID.randomUUID());
+              synthetic.setAccountType(AccountType.SAVINGS);
+              synthetic.setName("Savings (sale proceeds)");
+              synthetic.setBalance(BigDecimal.ZERO);
+              activeAccounts.add(synthetic);
+              balances.add(scaled(BigDecimal.ZERO));
+              idxByUuid.put(synthetic.getId(), balances.size() - 1);
+              savingsIdx = balances.size() - 1;
+            }
+            balances.set(savingsIdx, scaled(balances.get(savingsIdx).add(netProceeds, MC)));
+            propertySold[p] = true;
+            propertyMortgageBalances.set(p, BigDecimal.ZERO);
+            monthSaleProceedsNet = scaled(monthSaleProceedsNet.add(netProceeds, MC));
+            monthSaleCapitalGainsAmt = scaled(monthSaleCapitalGainsAmt.add(taxableGain, MC));
+          }
+        }
+
+        // 4.5(b) / 4.5(c) Ongoing housing expense for this month.
+        if (propertySold[p]) {
+          BigDecimal monthlyReplacement =
+              (prop.getPostSaleMonthlyHousingCost() != null
+                      ? prop.getPostSaleMonthlyHousingCost()
+                      : BigDecimal.ZERO)
+                  .multiply(inflationFactor, MC);
+          monthHousingExpenses = scaled(monthHousingExpenses.add(monthlyReplacement, MC));
+        } else {
+          // Mortgage amortization.
+          BigDecimal mortgageBalance = propertyMortgageBalances.get(p);
+          BigDecimal monthlyPI =
+              prop.getMortgageMonthlyPi() != null ? prop.getMortgageMonthlyPi() : BigDecimal.ZERO;
+          if (mortgageBalance.signum() > 0 && monthlyPI.signum() > 0) {
+            BigDecimal rate =
+                prop.getMortgageAnnualRate() != null
+                    ? prop.getMortgageAnnualRate()
+                    : BigDecimal.ZERO;
+            MortgageAmortizer.MonthlyStep step =
+                MortgageAmortizer.step(mortgageBalance, rate, monthlyPI);
+            propertyMortgageBalances.set(p, scaled(step.newBalance()));
+            monthHousingExpenses = scaled(monthHousingExpenses.add(step.paymentMade(), MC));
+            monthMortgageInterest = scaled(monthMortgageInterest.add(step.interest(), MC));
+          }
+          // Recurring expenses — each inflates from today's-dollars on the entity.
+          BigDecimal monthlyTax =
+              (prop.getAnnualPropertyTax() != null ? prop.getAnnualPropertyTax() : BigDecimal.ZERO)
+                  .divide(TWELVE, MC)
+                  .multiply(inflationFactor, MC);
+          monthHousingExpenses = scaled(monthHousingExpenses.add(monthlyTax, MC));
+          monthPropertyTaxPaid = scaled(monthPropertyTaxPaid.add(monthlyTax, MC));
+          BigDecimal monthlyInsurance =
+              (prop.getAnnualInsurance() != null ? prop.getAnnualInsurance() : BigDecimal.ZERO)
+                  .divide(TWELVE, MC)
+                  .multiply(inflationFactor, MC);
+          monthHousingExpenses = scaled(monthHousingExpenses.add(monthlyInsurance, MC));
+          BigDecimal monthlyHoa =
+              (prop.getMonthlyHoa() != null ? prop.getMonthlyHoa() : BigDecimal.ZERO)
+                  .multiply(inflationFactor, MC);
+          monthHousingExpenses = scaled(monthHousingExpenses.add(monthlyHoa, MC));
+          BigDecimal currentValueInflated =
+              (prop.getCurrentValue() != null ? prop.getCurrentValue() : BigDecimal.ZERO)
+                  .multiply(inflationFactor, MC);
+          BigDecimal maintenancePct =
+              prop.getAnnualMaintenancePct() != null
+                  ? prop.getAnnualMaintenancePct()
+                  : BigDecimal.ZERO;
+          BigDecimal monthlyMaintenance =
+              currentValueInflated.multiply(maintenancePct, MC).divide(TWELVE, MC);
+          monthHousingExpenses = scaled(monthHousingExpenses.add(monthlyMaintenance, MC));
+        }
+      }
+
+      // Sale capital gains feed the existing LTCG tax bucket alongside brokerage-withdrawal gains.
+      if (monthSaleCapitalGainsAmt.signum() > 0) {
+        monthLtcgFromWithdrawals =
+            scaled(monthLtcgFromWithdrawals.add(monthSaleCapitalGainsAmt, MC));
+      }
+
+      // How much of this month's housing expense needs to come from accounts (vs. paid out of
+      // income or, pre-retirement, wages that aren't modeled):
+      //   - Pre-retirement: 0. The user is presumed to be working; wages (not modeled in the
+      //     engine) cover housing alongside the contributions already going into accounts.
+      //   - Post-retirement: housing expense minus the income that's "free" after the user's
+      //     discretionary need has been met.
+      //       CASHFLOW_TARGET: surplus = income − target_inflated. Income above target offsets
+      //         housing (so when SS at 67 swings income above target, the account drain for
+      //         housing also drops correspondingly).
+      //       PORTFOLIO_PERCENTAGE: the strategy's 4%-of-balance draw is independent of income,
+      //         so all income is available to offset housing.
+      // yearHousingExpenses still tracks the full housing cost for display — what changes is
+      // only how much is actually drained from accounts.
+      BigDecimal housingToDrain;
+      if (!isRetired) {
+        housingToDrain = BigDecimal.ZERO;
+      } else {
+        BigDecimal incomeForHousing;
+        if (assumptions.getWithdrawalStrategy() == WithdrawalStrategy.CASHFLOW_TARGET) {
+          BigDecimal targetInflated =
+              (assumptions.getWithdrawalMonthlyAmount() != null
+                      ? assumptions.getWithdrawalMonthlyAmount()
+                      : BigDecimal.ZERO)
+                  .multiply(inflationFactor, MC);
+          incomeForHousing = monthIncome.subtract(targetInflated, MC).max(BigDecimal.ZERO);
+        } else {
+          incomeForHousing = monthIncome;
+        }
+        housingToDrain = monthHousingExpenses.subtract(incomeForHousing, MC).max(BigDecimal.ZERO);
+      }
+
+      // Drain housing expenses from accounts via the same allocator used for discretionary
+      // withdrawals. Bucket by tax type; Traditional draws count toward RMD. Housing $ does NOT
+      // accumulate into yearWithdrawals — it surfaces separately as yearHousingExpenses.
+      if (housingToDrain.signum() > 0) {
+        BigDecimal totalBalanceForHousing = sum(balances);
+        BigDecimal toFund = housingToDrain.min(totalBalanceForHousing);
+        if (toFund.signum() > 0) {
+          List<AccountSnapshot> snapshots = new ArrayList<>(activeAccounts.size());
+          for (int i = 0; i < activeAccounts.size(); i++) {
+            snapshots.add(
+                new AccountSnapshot(
+                    activeAccounts.get(i).getId(),
+                    activeAccounts.get(i).getAccountType(),
+                    balances.get(i)));
+          }
+          Map<UUID, BigDecimal> allocation = allocator.allocate(snapshots, toFund);
+          for (Map.Entry<UUID, BigDecimal> entry : allocation.entrySet()) {
+            Integer idx = idxByUuid.get(entry.getKey());
+            if (idx == null) continue;
+            BigDecimal share = entry.getValue();
+            if (share.signum() <= 0) continue;
+            balances.set(idx, scaled(balances.get(idx).subtract(share, MC)));
+            // Roll housing drain into monthWithdrawal so the "Withdrawals" column matches the
+            // user's mental model of "total amount drawn from my accounts this period." The
+            // separate yearHousingExpenses column still surfaces the total housing cost for
+            // display; the difference between yearHousingExpenses and the housing portion of
+            // yearWithdrawals = the part that was covered by income surplus (no account drain).
+            monthWithdrawal = scaled(monthWithdrawal.add(share, MC));
+            switch (activeAccounts.get(idx).getAccountType()) {
+              case TRADITIONAL_401K, TRADITIONAL_IRA -> {
+                monthOrdinaryFromWithdrawals = scaled(monthOrdinaryFromWithdrawals.add(share, MC));
+                BigDecimal applied = share.min(rmdRemainingThisYear);
+                if (applied.signum() > 0) {
+                  rmdRemainingThisYear = scaled(rmdRemainingThisYear.subtract(applied, MC));
+                  monthRmdSatisfied = scaled(monthRmdSatisfied.add(applied, MC));
+                }
+              }
+              case TAXABLE_BROKERAGE ->
+                  monthLtcgFromWithdrawals = scaled(monthLtcgFromWithdrawals.add(share, MC));
+              case ROTH_401K, ROTH_IRA, HSA, SAVINGS -> {
+                // Tax-free for projection purposes.
+              }
+            }
+          }
+        }
+      }
+
       // RMD top-up. In calendar December, if the year's RMD obligation is not yet satisfied by
       // strategy withdrawals, force the shortfall from Traditional accounts (proportional within
       // tier). Gross amount lands in Savings — existing if any, else a transient synthetic Savings
@@ -472,13 +764,18 @@ public class SimulationEngine {
       yearCapitalGainsFromWithdrawals =
           scaled(yearCapitalGainsFromWithdrawals.add(monthLtcgFromWithdrawals, MC));
       yearRmdTotal = scaled(yearRmdTotal.add(monthRmdSatisfied, MC));
+      yearMortgageInterest = scaled(yearMortgageInterest.add(monthMortgageInterest, MC));
+      yearPropertyTaxPaid = scaled(yearPropertyTaxPaid.add(monthPropertyTaxPaid, MC));
+      yearHousingExpenses = scaled(yearHousingExpenses.add(monthHousingExpenses, MC));
+      yearSaleProceedsNet = scaled(yearSaleProceedsNet.add(monthSaleProceedsNet, MC));
+      yearSaleCapitalGains = scaled(yearSaleCapitalGains.add(monthSaleCapitalGainsAmt, MC));
 
       // 5. Emit a row at each retirement-anchor month.
       if (currentMonth.getMonth() == rowAnchorMonth) {
         BigDecimal totalBalance = sum(balances);
 
         // Tax pipeline. Order matters: SS taxability depends on other ordinary income +
-        // capital gains; the calculator then fold taxable-SS into ordinary income.
+        // capital gains; the calculator then folds taxable-SS into ordinary income.
         BigDecimal ordinaryNonSS = yearIncomeNonSS.add(yearOrdinaryFromWithdrawals, MC);
         BigDecimal capitalGains = yearCapitalGainsFromWithdrawals;
         BigDecimal taxableSS =
@@ -488,9 +785,29 @@ public class SimulationEngine {
 
         TaxBrackets brackets =
             taxBracketProvider.bracketsForYear(currentMonth.getYear(), inflationFactor);
-        TaxResult tax = taxCalculator.compute(status, ordinaryIncome, capitalGains, brackets);
+        // Itemized deduction = mortgage interest + SALT-capped property tax. SALT cap is held
+        // constant nominal (documented simplification — OBBBA has a 2026-2029 ramp followed by a
+        // reversion in 2030 that we don't model). TaxCalculator picks max(itemized, standard).
+        BigDecimal saltCappedTax = yearPropertyTaxPaid.min(FederalTaxBrackets2026.SALT_CAP);
+        BigDecimal itemizedDeduction = yearMortgageInterest.add(saltCappedTax, MC);
+        TaxResult tax =
+            taxCalculator.compute(
+                status, ordinaryIncome, capitalGains, brackets, itemizedDeduction);
+        BigDecimal standardDeduction = brackets.standardDeductionFor(status);
+        BigDecimal deductionUsed = standardDeduction.max(itemizedDeduction);
 
         BigDecimal yearIncome = yearIncomeNonSS.add(yearSocialSecurityGross, MC);
+
+        // Net-worth display: sum of active (not-yet-sold) property values at this row time.
+        BigDecimal propertyValueTotal = BigDecimal.ZERO;
+        for (int p = 0; p < props.size(); p++) {
+          if (propertySold[p]) continue;
+          Property prop = props.get(p);
+          if (prop.getCurrentValue() != null) {
+            propertyValueTotal =
+                propertyValueTotal.add(prop.getCurrentValue().multiply(inflationFactor, MC), MC);
+          }
+        }
 
         rows.add(
             new YearlyProjection(
@@ -508,6 +825,13 @@ public class SimulationEngine {
                 output(tax.capitalGainsTax()),
                 output(tax.totalTax()),
                 output(yearRmdTotal),
+                output(yearMortgageInterest),
+                output(yearPropertyTaxPaid),
+                output(yearHousingExpenses),
+                output(yearSaleProceedsNet),
+                output(yearSaleCapitalGains),
+                output(propertyValueTotal),
+                output(deductionUsed),
                 scaled(inflationFactor)));
 
         // Reset year-deltas; advance inflation for the next year.
@@ -518,6 +842,11 @@ public class SimulationEngine {
         yearOrdinaryFromWithdrawals = scaled(BigDecimal.ZERO);
         yearCapitalGainsFromWithdrawals = scaled(BigDecimal.ZERO);
         yearRmdTotal = scaled(BigDecimal.ZERO);
+        yearMortgageInterest = scaled(BigDecimal.ZERO);
+        yearPropertyTaxPaid = scaled(BigDecimal.ZERO);
+        yearHousingExpenses = scaled(BigDecimal.ZERO);
+        yearSaleProceedsNet = scaled(BigDecimal.ZERO);
+        yearSaleCapitalGains = scaled(BigDecimal.ZERO);
         inflationFactor = scaled(inflationFactor.multiply(BigDecimal.ONE.add(inflationRate), MC));
       }
 

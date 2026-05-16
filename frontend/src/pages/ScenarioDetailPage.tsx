@@ -35,6 +35,7 @@ import {
   createScenario,
   updateScenario,
   listAccounts,
+  listProperties,
   listIncomeSources,
   createIncomeSource,
   updateIncomeSource,
@@ -47,6 +48,7 @@ import type {
   AccountType,
   IncomeSource,
   IncomeType,
+  Property,
   SimulationAssumptions,
   UserProfile,
   WithdrawalOrderingStrategy,
@@ -68,7 +70,7 @@ const WITHDRAWAL_STRATEGIES: {
     value: "CASHFLOW_TARGET",
     label: "Cashflow Target (monthly budget)",
     helperText:
-      "Target monthly spend. Income (pension, SS, etc.) is applied first; savings cover the gap.",
+      "Non-housing target monthly spend. Mortgage / property tax / insurance / HOA / maintenance for properties in this scenario are modeled separately and do NOT need to be included here. Income (pension, SS, etc.) is applied to the target first; any surplus offsets housing; savings cover the rest.",
   },
 ];
 
@@ -183,6 +185,7 @@ export default function ScenarioDetailPage() {
   const cloneFrom = searchParams.get("cloneFrom");
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState("");
@@ -191,6 +194,7 @@ export default function ScenarioDetailPage() {
     name: "",
     description: "",
     accountIds: [] as string[],
+    propertyIds: [] as string[],
     assumptions: { ...defaultAssumptions },
   });
   // When the user opened the editor via clone, the source's income sources are
@@ -220,13 +224,16 @@ export default function ScenarioDetailPage() {
         name: s.name,
         description: s.description ?? "",
         accountIds: s.accountIds,
+        propertyIds: s.propertyIds ?? [],
         assumptions: s.assumptions,
       });
-      const [accRes, profileRes] = await Promise.all([
+      const [accRes, propRes, profileRes] = await Promise.all([
         listAccounts(s.userProfileId),
+        listProperties(s.userProfileId),
         getUserProfile(s.userProfileId),
       ]);
       setAccounts(accRes.data);
+      setProperties(propRes.data);
       setProfile(profileRes.data);
       await loadIncomeSources(scenarioId);
     } catch {
@@ -241,30 +248,42 @@ export default function ScenarioDetailPage() {
         // so they can be re-created against the new scenario after the first save.
         Promise.all([
           listAccounts(profileId),
+          listProperties(profileId),
           getUserProfile(profileId),
           getScenario(cloneFrom),
           listIncomeSources(cloneFrom),
         ])
-          .then(([accRes, profileRes, scenarioRes, incomeRes]) => {
+          .then(([accRes, propRes, profileRes, scenarioRes, incomeRes]) => {
             setAccounts(accRes.data);
+            setProperties(propRes.data);
             setProfile(profileRes.data);
             const src = scenarioRes.data;
             setForm({
               name: `Copy of ${src.name}`,
               description: src.description ?? "",
               accountIds: src.accountIds,
+              propertyIds: src.propertyIds ?? [],
               assumptions: src.assumptions,
             });
             setPendingIncomeCopies(incomeRes.data);
           })
           .catch(() => setError("Failed to load scenario to clone"));
       } else {
-        Promise.all([listAccounts(profileId), getUserProfile(profileId)])
-          .then(([accRes, profileRes]) => {
+        Promise.all([
+          listAccounts(profileId),
+          listProperties(profileId),
+          getUserProfile(profileId),
+        ])
+          .then(([accRes, propRes, profileRes]) => {
             setAccounts(accRes.data);
+            setProperties(propRes.data);
             setProfile(profileRes.data);
-            // For new scenarios, default to all accounts selected.
-            setForm((prev) => ({ ...prev, accountIds: accRes.data.map((a) => a.id) }));
+            // For new scenarios, default to all accounts AND all properties selected.
+            setForm((prev) => ({
+              ...prev,
+              accountIds: accRes.data.map((a) => a.id),
+              propertyIds: propRes.data.map((p) => p.id),
+            }));
           })
           .catch(() => {});
       }
@@ -279,6 +298,7 @@ export default function ScenarioDetailPage() {
         name: form.name,
         description: form.description || null,
         accountIds: form.accountIds,
+        propertyIds: form.propertyIds,
         assumptions: form.assumptions,
       };
       if (isNew && profileId) {
@@ -324,6 +344,23 @@ export default function ScenarioDetailPage() {
 
   const deselectAllAccounts = () => {
     setForm((prev) => ({ ...prev, accountIds: [] }));
+  };
+
+  const toggleProperty = (propertyId: string) => {
+    setForm((prev) => ({
+      ...prev,
+      propertyIds: prev.propertyIds.includes(propertyId)
+        ? prev.propertyIds.filter((id) => id !== propertyId)
+        : [...prev.propertyIds, propertyId],
+    }));
+  };
+
+  const selectAllProperties = () => {
+    setForm((prev) => ({ ...prev, propertyIds: properties.map((p) => p.id) }));
+  };
+
+  const deselectAllProperties = () => {
+    setForm((prev) => ({ ...prev, propertyIds: [] }));
   };
 
   const updateAssumptions = (patch: Partial<SimulationAssumptions>) => {
@@ -524,6 +561,43 @@ export default function ScenarioDetailPage() {
       </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            Real Property
+          </Typography>
+          {properties.length > 0 && (
+            <>
+              <Button size="small" onClick={selectAllProperties} sx={{ mr: 1 }}>
+                Select all
+              </Button>
+              <Button size="small" onClick={deselectAllProperties}>
+                Deselect all
+              </Button>
+            </>
+          )}
+        </Box>
+        {properties.length === 0 ? (
+          <Typography color="text.secondary">
+            No properties on this profile. Add a primary residence, rental, or other real
+            property on the profile page to model housing in this scenario.
+          </Typography>
+        ) : (
+          properties.map((property) => (
+            <FormControlLabel
+              key={property.id}
+              control={
+                <Checkbox
+                  checked={form.propertyIds.includes(property.id)}
+                  onChange={() => toggleProperty(property.id)}
+                />
+              }
+              label={`${property.name} (${property.type.replace(/_/g, " ")} — $${property.currentValue.toLocaleString()}${property.mortgageBalance > 0 ? `, mortgage $${property.mortgageBalance.toLocaleString()}` : ""})`}
+            />
+          ))
+        )}
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             Income Sources
@@ -661,7 +735,7 @@ export default function ScenarioDetailPage() {
           {form.assumptions.withdrawalStrategy === "CASHFLOW_TARGET" && (
             <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <TextField
-                label="Monthly Cashflow Target"
+                label="Monthly Cashflow Target (excludes housing)"
                 type="number"
                 value={form.assumptions.withdrawalMonthlyAmount ?? ""}
                 onChange={(e) =>
@@ -671,7 +745,7 @@ export default function ScenarioDetailPage() {
                   })
                 }
                 fullWidth
-                helperText="What you want to spend per month (income offsets the savings draw)"
+                helperText="Non-housing monthly spend. Housing costs (mortgage, property tax, insurance, HOA, maintenance) for properties in this scenario are modeled separately. Income offsets the target first; any surplus offsets housing."
                 slotProps={{ htmlInput: { step: 100 } }}
               />
             </Grid>
@@ -787,7 +861,12 @@ export default function ScenarioDetailPage() {
         fullWidth
       >
         <DialogTitle>{editingIncomeId ? "Edit Income Source" : "Add Income Source"}</DialogTitle>
-        <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+        {/* Inline `style` to beat MUI's `.MuiDialogTitle-root + .MuiDialogContent-root
+            { padding-top: 0 }` rule — otherwise the first row's floating labels get clipped. */}
+        <DialogContent
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
+          style={{ paddingTop: 10 }}
+        >
           <TextField
             label="Name"
             value={incomeForm.name}
